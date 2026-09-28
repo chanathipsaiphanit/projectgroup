@@ -1,8 +1,10 @@
 import { createContext, ReactNode, useContext, useState } from 'react';
 
-type Role = 'admin' | 'user';
+// 'user' = buyer, 'seller' = can list cars, 'admin' = manages everything
+export type Role = 'admin' | 'seller' | 'user';
 
-interface AuthUser {
+export interface AuthUser {
+  id: number;
   username: string;
   role: Role;
   token: string;

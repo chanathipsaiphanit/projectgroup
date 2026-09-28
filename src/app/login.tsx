@@ -37,9 +37,9 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Store the session in AuthContext — this is what index/add/edit
-        // read from to know who's logged in and what token to send.
+        // id is needed to know which listings/chats belong to this user
         login({
+          id: data.user.id,
           username: data.user.username,
           role: data.user.role,
           token: data.token,
@@ -88,6 +88,7 @@ export default function LoginScreen() {
           value={password}
           onChangeText={setPassword}
           editable={!loading}
+          onSubmitEditing={handleLogin}
         />
 
         <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} disabled={loading}>
@@ -101,6 +102,10 @@ export default function LoginScreen() {
         <TouchableOpacity style={styles.registerLink} onPress={() => router.push('/register')}>
           <Text style={styles.registerLinkText}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.registerLink} onPress={() => router.replace('/')}>
+          <Text style={styles.registerLinkText}>Browse cars without signing in</Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -108,7 +113,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#0A0A0A' },
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 24, width: '100%', maxWidth: 460, alignSelf: 'center' },
   brandTitle: { fontSize: 32, fontWeight: '900', color: '#fff', textAlign: 'center', letterSpacing: 2, marginBottom: 8 },
   brandAccent: { width: 40, height: 3, backgroundColor: '#E4001B', alignSelf: 'center', marginBottom: 16, borderRadius: 2 },
   subtitle: { fontSize: 14, color: '#999', textAlign: 'center', marginBottom: 32 },
@@ -130,6 +135,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   loginBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  registerLink: { padding: 12, alignItems: 'center', marginTop: 16 },
+  registerLink: { padding: 10, alignItems: 'center', marginTop: 8 },
   registerLinkText: { color: '#999', fontSize: 14 }
 });
