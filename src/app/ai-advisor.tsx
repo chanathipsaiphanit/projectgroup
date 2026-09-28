@@ -111,7 +111,7 @@ export default function AiAdvisorScreen() {
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
 
-        <Heading style={styles.title} th="✦ AI แนะนำรถ" en="AI Car Advisor" />
+        <Heading style={styles.title} th="แนะนำรถให้คุณได้ที่นี่" en="Find Your Car" />
         <Text style={styles.subtitle}>
           บอกเราว่าจะใช้รถแบบไหนและมีงบเท่าไหร่ ระบบจะให้คะแนนรถมือสองทุกคันในสต็อก และแนะนำงบประมาณที่เหมาะกับคุณ
         </Text>
@@ -155,7 +155,7 @@ export default function AiAdvisorScreen() {
           />
 
           <TouchableOpacity style={uiStyles.primaryBtn} onPress={analyze} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>วิเคราะห์ด้วย AI</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>ค้นหารถที่เหมาะกับฉัน</Text>}
           </TouchableOpacity>
         </View>
 
@@ -164,8 +164,7 @@ export default function AiAdvisorScreen() {
           <>
             <View style={styles.summaryCard}>
               <View style={styles.summaryHead}>
-                <Heading style={styles.summaryTitle} th="สรุปจาก AI" en="AI Summary" />
-                <Text style={styles.sourceTag}>{result.summarySource === 'claude' ? 'Claude AI' : 'โมเดลให้คะแนน'}</Text>
+                <Heading style={styles.summaryTitle} th="สรุปคำแนะนำ" en="Summary" />
               </View>
               <Text style={styles.summaryText}>{result.summary}</Text>
             </View>
@@ -266,7 +265,6 @@ const styles = StyleSheet.create({
   summaryCard: { padding: 16, borderRadius: 10, backgroundColor: '#1F0A0C', borderWidth: 1, borderColor: C.red, marginBottom: 16 },
   summaryHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   summaryTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
-  sourceTag: { color: C.soft, fontSize: 11, fontWeight: '700', borderWidth: 1, borderColor: '#444', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   summaryText: { color: '#fff', fontSize: 14, lineHeight: 21 },
 
   blockTitle: { color: '#fff', fontWeight: '800', fontSize: 15, marginBottom: 10 },

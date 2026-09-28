@@ -179,6 +179,22 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
   }
 });
 
+// Seller marks a car as sold (stock 0) or back on sale — no need to resend the whole listing
+app.patch('/api/inventory/:id/stock', verifyToken, async (req, res) => {
+  try {
+    const existing = await findCar(req.params.id);
+    if (!existing) return fail(res, 404, 'ไม่พบรถคันนี้');
+    if (!canManageCar(req.user, existing)) return fail(res, 403, 'แก้ไขได้เฉพาะรถที่คุณลงขายเอง');
+    const stock = Number(req.body.stock);
+    if (!Number.isInteger(stock) || stock < 0) return fail(res, 400, 'จำนวนรถไม่ถูกต้อง');
+    await db.query('UPDATE Inventory SET stock = ? WHERE id = ?', [stock, req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Stock update error:', err.message);
+    fail(res, 500, err.message);
+  }
+});
+
 app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -450,7 +466,7 @@ app.post('/api/ai/recommend', async (req, res) => {
     res.json({ success: true, ...result, summary: summary.text, summarySource: summary.source });
   } catch (err) {
     console.error('AI recommend error:', err.message);
-    fail(res, 500, 'AI วิเคราะห์ไม่สำเร็จ');
+    fail(res, 500, 'วิเคราะห์ไม่สำเร็จ');
   }
 });
 
@@ -469,6 +485,79 @@ app.post('/api/ai/compare', async (req, res) => {
   } catch (err) {
     console.error('AI compare error:', err.message);
     fail(res, 500, 'เปรียบเทียบไม่สำเร็จ');
+  }
+});
+
+// ==========================================
+// Admin
+// ==========================================
+const adminOnly = [verifyToken, requireRole('admin')];
+
+app.get('/api/admin/stats', adminOnly, async (req, res) => {
+  try {
+    const [[cars]] = await db.query(
+      'SELECT COUNT(*) AS total, SUM(stock > 0) AS onSale, SUM(stock = 0) AS sold FROM Inventory'
+    );
+    const [roles] = await db.query('SELECT role, COUNT(*) AS n FROM users GROUP BY role');
+    const [[convs]] = await db.query('SELECT COUNT(*) AS n FROM conversations');
+    const [[appts]] = await db.query("SELECT COUNT(*) AS n FROM appointments WHERE status = 'pending'");
+    const users = Object.fromEntries(roles.map((r) => [r.role, Number(r.n)]));
+    res.json({
+      cars: { total: Number(cars.total || 0), onSale: Number(cars.onSale || 0), sold: Number(cars.sold || 0) },
+      users: { buyers: users.user || 0, sellers: users.seller || 0, admins: users.admin || 0 },
+      conversations: Number(convs.n),
+      pendingAppointments: Number(appts.n),
+    });
+  } catch (err) {
+    console.error('Admin stats error:', err.message);
+    fail(res, 500, 'โหลดข้อมูลสรุปไม่สำเร็จ');
+  }
+});
+
+app.get('/api/admin/users', adminOnly, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT u.id, u.username, u.email, u.role, u.created_at, COUNT(i.id) AS car_count
+       FROM users u LEFT JOIN Inventory i ON i.seller_id = u.id
+       GROUP BY u.id ORDER BY u.id DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Admin users error:', err.message);
+    fail(res, 500, 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ');
+  }
+});
+
+app.patch('/api/admin/users/:id', adminOnly, async (req, res) => {
+  try {
+    const role = String(req.body.role || '');
+    if (!['user', 'seller', 'admin'].includes(role)) return fail(res, 400, 'สิทธิ์ไม่ถูกต้อง');
+    if (Number(req.params.id) === Number(req.user.id)) return fail(res, 400, 'เปลี่ยนสิทธิ์ของตัวเองไม่ได้');
+    const [result] = await db.query('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+    if (!result.affectedRows) return fail(res, 404, 'ไม่พบผู้ใช้นี้');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Admin role error:', err.message);
+    fail(res, 500, 'เปลี่ยนสิทธิ์ไม่สำเร็จ');
+  }
+});
+
+// Deleting a user also removes their chats; their cars stay listed under the shop
+app.delete('/api/admin/users/:id', adminOnly, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (id === Number(req.user.id)) return fail(res, 400, 'ลบบัญชีของตัวเองไม่ได้');
+    const mine = 'SELECT id FROM conversations WHERE buyer_id = ? OR seller_id = ?';
+    await db.query(`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM (${mine}) t)`, [id, id]);
+    await db.query(`DELETE FROM appointments WHERE conversation_id IN (SELECT id FROM (${mine}) t)`, [id, id]);
+    await db.query('DELETE FROM conversations WHERE buyer_id = ? OR seller_id = ?', [id, id]);
+    await db.query('UPDATE Inventory SET seller_id = NULL WHERE seller_id = ?', [id]);
+    const [result] = await db.query('DELETE FROM users WHERE id = ?', [id]);
+    if (!result.affectedRows) return fail(res, 404, 'ไม่พบผู้ใช้นี้');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Admin delete user error:', err.message);
+    fail(res, 500, 'ลบผู้ใช้ไม่สำเร็จ');
   }
 });
 
