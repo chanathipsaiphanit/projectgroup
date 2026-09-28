@@ -84,11 +84,11 @@ function clusterPricesLocally(data: Car[]): TieredCar[] {
 // ---------- Advanced filters ----------
 type SortKey = 'newest' | 'price_asc' | 'price_desc' | 'year_desc' | 'mileage_asc';
 const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'newest', label: 'Newest listing' },
-  { key: 'price_asc', label: 'Price: low → high' },
-  { key: 'price_desc', label: 'Price: high → low' },
-  { key: 'year_desc', label: 'Newest model year' },
-  { key: 'mileage_asc', label: 'Lowest mileage' },
+  { key: 'newest', label: 'ลงขายล่าสุด' },
+  { key: 'price_asc', label: 'ราคา: ต่ำ → สูง' },
+  { key: 'price_desc', label: 'ราคา: สูง → ต่ำ' },
+  { key: 'year_desc', label: 'ปีรถใหม่สุด' },
+  { key: 'mileage_asc', label: 'ไมล์น้อยสุด' },
 ];
 
 type Filters = {
@@ -96,6 +96,7 @@ type Filters = {
   maxPrice: string;
   minYear: string;
   maxMileage: string;
+  brand: string;
   fuel: string;
   transmission: string;
   sort: SortKey;
@@ -107,6 +108,7 @@ const EMPTY_FILTERS: Filters = {
   maxPrice: '',
   minYear: '',
   maxMileage: '',
+  brand: 'All',
   fuel: 'All',
   transmission: 'All',
   sort: 'newest',
@@ -119,6 +121,12 @@ const parseNum = (s: string) => {
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 };
+
+// Brand = first word of the listing name ("Toyota Yaris Ativ" -> "Toyota")
+const brandOf = (car: Car) => car.name.trim().split(/\s+/)[0] || '';
+
+const TIER_LABEL: Record<'All' | PriceTier, string> = { All: 'ทุกช่วงราคา', Low: 'ราคาประหยัด', Mid: 'ราคากลาง', High: 'ราคาสูง' };
+const ROLE_LABEL: Record<string, string> = { user: 'ผู้ซื้อ', seller: 'ผู้ขาย', admin: 'แอดมิน' };
 
 const MAX_COMPARE = 4;
 const MAX_CONTENT_WIDTH = 1200;
@@ -216,6 +224,11 @@ export default function HomeScreen() {
     return ['All', ...unique];
   }, [cars]);
 
+  const brands = useMemo(() => {
+    const unique = Array.from(new Set(cars.map(brandOf).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    return ['All', ...unique];
+  }, [cars]);
+
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setFilters((prev) => ({ ...prev, [key]: value }));
 
@@ -224,6 +237,7 @@ export default function HomeScreen() {
     (filters.maxPrice.trim() ? 1 : 0) +
     (filters.minYear.trim() ? 1 : 0) +
     (filters.maxMileage.trim() ? 1 : 0) +
+    (filters.brand !== 'All' ? 1 : 0) +
     (filters.fuel !== 'All' ? 1 : 0) +
     (filters.transmission !== 'All' ? 1 : 0) +
     (filters.sort !== 'newest' ? 1 : 0) +
@@ -239,7 +253,8 @@ export default function HomeScreen() {
     const list = cars.filter((item) => {
       if (activeType !== 'All' && item.type !== activeType) return false;
       if (activeTier !== 'All' && tierById.get(item.id) !== activeTier) return false;
-      if (q && !`${item.name} ${item.model}`.toLowerCase().includes(q)) return false;
+      if (q && !`${item.name} ${item.model} ${item.type}`.toLowerCase().includes(q)) return false;
+      if (filters.brand !== 'All' && brandOf(item) !== filters.brand) return false;
       if (minPrice != null && item.price < minPrice) return false;
       if (maxPrice != null && item.price > maxPrice) return false;
       if (minYear != null && (item.year == null || item.year < minYear)) return false;
@@ -262,16 +277,54 @@ export default function HomeScreen() {
   }, [cars, activeType, activeTier, searchQuery, filters, tierById, user]);
 
   const sectionTitle = searchQuery
-    ? `Results for "${searchQuery}"`
+    ? `ผลการค้นหา "${searchQuery}"`
     : filters.onlyMine
-    ? 'My Listings'
-    : activeType === 'All'
-    ? 'All Cars'
-    : activeType;
+    ? 'รถที่ฉันลงขาย'
+    : [filters.brand !== 'All' ? filters.brand : '', activeType !== 'All' ? activeType : ''].filter(Boolean).join(' · ') || 'รถทั้งหมด';
+
+  // ---------- Feature shortcuts ----------
+  const goSell = () => {
+    if (!user) {
+      notify('กรุณาเข้าสู่ระบบด้วยบัญชีผู้ขายก่อนลงขายรถ');
+      router.push('/login');
+    } else if (canSell(user)) {
+      router.push('/add');
+    } else {
+      confirmAction(
+        'ต้องใช้บัญชีผู้ขาย',
+        'บัญชีนี้เป็นบัญชีผู้ซื้อ ลงขายรถได้เฉพาะบัญชีผู้ขาย ต้องการออกจากระบบแล้วสมัครบัญชีผู้ขายไหม?',
+        () => {
+          logout();
+          router.push({ pathname: '/register', params: { role: 'seller' } });
+        },
+        'สมัครผู้ขาย'
+      );
+    }
+  };
+
+  const goMessages = () => {
+    if (!user) {
+      notify('กรุณาเข้าสู่ระบบก่อนดูข้อความ');
+      router.push('/login');
+    } else router.push('/inbox');
+  };
+
+  const startCompare = () => {
+    setCompareMode(true);
+    setCompareIds([]);
+  };
+
+  const FEATURES = [
+    { key: 'sell', icon: '＋', title: 'ลงขายรถ', desc: 'สำหรับผู้ขาย', onPress: goSell },
+    { key: 'filter', icon: '☰', title: 'กรองรถ', desc: 'ยี่ห้อ ราคา ปี ไมล์', onPress: () => setFiltersOpen((v) => !v) },
+    { key: 'chat', icon: '✉', title: 'ติดต่อผู้ขาย', desc: 'แชท / นัดดูรถ', onPress: goMessages },
+    { key: 'ai', icon: '✦', title: 'AI แนะนำรถ', desc: 'ตามงบและการใช้งาน', onPress: () => router.push('/ai-advisor') },
+    { key: 'compare', icon: '⇄', title: 'เปรียบเทียบรถ', desc: 'AI/ML 2–4 คัน', onPress: startCompare },
+  ];
 
   const handleLogout = () => {
     logout();
-    if (Platform.OS === 'web') window.alert('Logged out successfully');
+    if (Platform.OS === 'web') window.alert('ออกจากระบบแล้ว');
     router.replace('/login');
   };
 
@@ -351,58 +404,77 @@ export default function HomeScreen() {
             <Text style={styles.brandTitle}>Noon Home Car</Text>
 
             <View style={styles.topBarActions}>
-              {canSell(user) && (
-                <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add')}>
-                  <Text style={styles.addBtnText}>+ Sell Car</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity style={styles.aiBtn} onPress={() => router.push('/ai-advisor')}>
-                <Text style={styles.aiBtnText}>✦ AI Advisor</Text>
-              </TouchableOpacity>
-
-              {user && (
-                <TouchableOpacity style={styles.actionBtnOutline} onPress={() => router.push('/inbox')}>
-                  <Text style={styles.actionBtnOutlineText}>Messages</Text>
-                </TouchableOpacity>
-              )}
-
               <TouchableOpacity style={styles.searchPill} onPress={openSearch}>
                 <SearchIcon size={12} color="#B0B0B0" />
                 <Text style={styles.searchPillText} numberOfLines={1}>
-                  {searchQuery || 'Search'}
+                  {searchQuery || 'ค้นหารถ'}
                 </Text>
               </TouchableOpacity>
 
               {user ? (
                 <TouchableOpacity style={styles.actionBtnOutline} onPress={handleLogout}>
-                  <Text style={styles.actionBtnOutlineText}>Logout</Text>
+                  <Text style={styles.actionBtnOutlineText}>ออกจากระบบ</Text>
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => router.replace('/login')}>
-                  <Text style={styles.actionBtnPrimaryText}>Sign In</Text>
+                <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => router.push('/login')}>
+                  <Text style={styles.actionBtnPrimaryText}>เข้าสู่ระบบ</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
 
-          {user && (
-            <Text style={styles.welcomeText}>
-              Welcome, {user.username} ({user.role === 'user' ? 'BUYER' : String(user.role).toUpperCase()})
-            </Text>
-          )}
+          <Text style={styles.welcomeText}>
+            {user
+              ? `สวัสดี ${user.username} · บัญชี${ROLE_LABEL[user.role] ?? user.role}`
+              : 'ยังไม่ได้เข้าสู่ระบบ · ดูรถได้เลย หรือเข้าสู่ระบบเพื่อลงขาย/ติดต่อผู้ขาย'}
+          </Text>
+
+          {/* The marketplace features, always visible so nothing is hidden behind a role */}
+          <View style={styles.featureGrid}>
+            {FEATURES.map((f) => {
+              const active = (f.key === 'filter' && filtersOpen) || (f.key === 'compare' && compareMode);
+              return (
+                <Pressable
+                  key={f.key}
+                  onPress={f.onPress}
+                  style={({ hovered }: any) => [styles.featureCard, (active || hovered) && styles.featureCardActive]}
+                >
+                  <Text style={styles.featureIcon}>{f.icon}</Text>
+                  <Text style={styles.featureTitle}>{f.title}</Text>
+                  <Text style={styles.featureDesc}>{f.desc}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.detailHint}>แตะที่รถคันไหนก็ได้เพื่อดูรายละเอียดรถ และทักแชทหรือนัดดูรถกับผู้ขาย</Text>
+
+          {/* Brand tabs (Toyota / Honda / ...) */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
+            {brands.map((b) => {
+              const active = b === filters.brand;
+              return (
+                <TouchableOpacity
+                  key={b}
+                  style={[styles.tabPill, active && styles.tabPillActive]}
+                  onPress={() => setFilter('brand', b)}
+                >
+                  <Text style={[styles.tabPillText, active && styles.tabPillTextActive]}>{b === 'All' ? 'ทุกยี่ห้อ' : b}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
           {/* Type tabs (Sedan / SUV / Sports Car / ...) */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tierTabsRow}>
             {types.map((t) => {
               const active = t === activeType;
               return (
                 <TouchableOpacity
                   key={t}
-                  style={[styles.tabPill, active && styles.tabPillActive]}
+                  style={[styles.tierTabPill, active && styles.tierTabPillActive]}
                   onPress={() => setActiveType(t)}
                 >
-                  <Text style={[styles.tabPillText, active && styles.tabPillTextActive]}>{t}</Text>
+                  <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>{t === 'All' ? 'ทุกประเภท' : t}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -419,7 +491,7 @@ export default function HomeScreen() {
                   onPress={() => setActiveTier(tier)}
                 >
                   <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>
-                    {tier === 'All' ? 'All Prices' : tier}
+                    {TIER_LABEL[tier]}
                   </Text>
                 </TouchableOpacity>
               );
@@ -429,7 +501,7 @@ export default function HomeScreen() {
               onPress={() => setFiltersOpen((v) => !v)}
             >
               <Text style={styles.filterToggleText}>
-                {filtersOpen ? '▲' : '▼'} Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+                {`${filtersOpen ? '▲' : '▼'} ตัวกรองเพิ่มเติม${activeFilterCount ? ` (${activeFilterCount})` : ''}`}
               </Text>
             </TouchableOpacity>
           </ScrollView>
@@ -438,10 +510,10 @@ export default function HomeScreen() {
             <View style={styles.filterPanel}>
               <View style={styles.filterInputs}>
                 {([
-                  ['minPrice', 'Min price (THB)'],
-                  ['maxPrice', 'Max price (THB)'],
-                  ['minYear', 'Year from'],
-                  ['maxMileage', 'Max mileage (km)'],
+                  ['minPrice', 'ราคาต่ำสุด (บาท)'],
+                  ['maxPrice', 'ราคาสูงสุด (บาท)'],
+                  ['minYear', 'ปีรถตั้งแต่'],
+                  ['maxMileage', 'ไมล์ไม่เกิน (กม.)'],
                 ] as const).map(([key, label]) => (
                   <View key={key} style={styles.filterInputWrap}>
                     <Text style={styles.filterLabel}>{label}</Text>
@@ -450,28 +522,35 @@ export default function HomeScreen() {
                       value={filters[key]}
                       onChangeText={(v) => setFilter(key, v)}
                       keyboardType="numeric"
-                      placeholder="Any"
+                      placeholder="ไม่จำกัด"
                       placeholderTextColor="#555"
                     />
                   </View>
                 ))}
               </View>
 
-              <Text style={styles.filterLabel}>Fuel</Text>
+              <Text style={styles.filterLabel}>ยี่ห้อ</Text>
+              <View style={styles.filterPills}>
+                {brands.map((b) => (
+                  <Pill key={b} small label={b === 'All' ? 'ทั้งหมด' : b} active={filters.brand === b} onPress={() => setFilter('brand', b)} />
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>เชื้อเพลิง</Text>
               <View style={styles.filterPills}>
                 {['All', ...FUELS].map((f) => (
-                  <Pill key={f} small label={f} active={filters.fuel === f} onPress={() => setFilter('fuel', f)} />
+                  <Pill key={f} small label={f === 'All' ? 'ทั้งหมด' : f} active={filters.fuel === f} onPress={() => setFilter('fuel', f)} />
                 ))}
               </View>
 
-              <Text style={styles.filterLabel}>Transmission</Text>
+              <Text style={styles.filterLabel}>เกียร์</Text>
               <View style={styles.filterPills}>
                 {['All', ...TRANSMISSIONS].map((t) => (
-                  <Pill key={t} small label={t} active={filters.transmission === t} onPress={() => setFilter('transmission', t)} />
+                  <Pill key={t} small label={t === 'All' ? 'ทั้งหมด' : t} active={filters.transmission === t} onPress={() => setFilter('transmission', t)} />
                 ))}
               </View>
 
-              <Text style={styles.filterLabel}>Sort by</Text>
+              <Text style={styles.filterLabel}>เรียงตาม</Text>
               <View style={styles.filterPills}>
                 {SORTS.map((s) => (
                   <Pill key={s.key} small label={s.label} active={filters.sort === s.key} onPress={() => setFilter('sort', s.key)} />
@@ -480,10 +559,16 @@ export default function HomeScreen() {
 
               <View style={styles.filterFooter}>
                 {canSell(user) && (
-                  <Pill small label="Only my listings" active={filters.onlyMine} onPress={() => setFilter('onlyMine', !filters.onlyMine)} />
+                  <Pill small label="เฉพาะรถที่ฉันลงขาย" active={filters.onlyMine} onPress={() => setFilter('onlyMine', !filters.onlyMine)} />
                 )}
-                <TouchableOpacity onPress={() => setFilters(EMPTY_FILTERS)}>
-                  <Text style={styles.resetText}>Reset filters</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setFilters(EMPTY_FILTERS);
+                    setActiveType('All');
+                    setActiveTier('All');
+                  }}
+                >
+                  <Text style={styles.resetText}>ล้างตัวกรองทั้งหมด</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -493,14 +578,14 @@ export default function HomeScreen() {
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-              <Text style={styles.countText}>{filteredCars.length} car{filteredCars.length === 1 ? '' : 's'}</Text>
+              <Text style={styles.countText}>{`${filteredCars.length} คัน`}</Text>
             </View>
             <View style={styles.arrowRow}>
               <TouchableOpacity
                 style={[styles.compareToggle, compareMode && styles.compareToggleActive]}
-                onPress={() => (compareMode ? exitCompare() : setCompareMode(true))}
+                onPress={() => (compareMode ? exitCompare() : startCompare())}
               >
-                <Text style={styles.compareToggleText}>{compareMode ? 'Cancel compare' : '⇄ Compare'}</Text>
+                <Text style={styles.compareToggleText}>{compareMode ? 'ยกเลิกเปรียบเทียบ' : '⇄ เปรียบเทียบรถ'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.arrowBtn} onPress={() => scrollByStep(-1)}>
                 <Text style={styles.arrowText}>{'‹'}</Text>
@@ -511,12 +596,14 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {compareMode && <Text style={styles.compareHint}>Tap 2–{MAX_COMPARE} cars to compare them with AI.</Text>}
+          {compareMode && (
+            <Text style={styles.compareHint}>{`โหมดเปรียบเทียบ: แตะเลือกรถ 2–${MAX_COMPARE} คัน แล้วกด "เปรียบเทียบด้วย AI" ด้านล่าง`}</Text>
+          )}
 
           {loading ? (
-            <Text style={styles.emptyText}>Loading cars…</Text>
+            <Text style={styles.emptyText}>กำลังโหลดรถ…</Text>
           ) : filteredCars.length === 0 ? (
-            <Text style={styles.emptyText}>No cars found</Text>
+            <Text style={styles.emptyText}>ไม่พบรถที่ตรงกับตัวกรอง</Text>
           ) : (
             <ScrollView
               ref={scrollRef}
@@ -562,14 +649,14 @@ export default function HomeScreen() {
                           ]}
                         >
                           <Text style={[styles.tierBadgeText, tier === 'Low' && styles.tierBadgeTextLow]}>
-                            {tier}
+                            {TIER_LABEL[tier]}
                           </Text>
                         </View>
                       )}
                       {isLow && (
                         <View style={styles.stockTag}>
                           <Text style={styles.stockTagText}>
-                            {item.stock === 0 ? 'SOLD OUT' : `ONLY ${item.stock} LEFT`}
+                            {item.stock === 0 ? 'ขายแล้ว' : `เหลือ ${item.stock} คัน`}
                           </Text>
                         </View>
                       )}
@@ -592,10 +679,10 @@ export default function HomeScreen() {
                           style={styles.editBtn}
                           onPress={() => router.push({ pathname: '/edit', params: { car: JSON.stringify(item) } })}
                         >
-                          <Text style={styles.editText}>Edit</Text>
+                          <Text style={styles.editText}>แก้ไข</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeletePress(item.id, item.name)}>
-                          <Text style={styles.deleteText}>Delete</Text>
+                          <Text style={styles.deleteText}>ลบ</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -611,19 +698,18 @@ export default function HomeScreen() {
       {compareMode && (
         <View style={styles.compareBar}>
           <Text style={styles.compareBarText}>
-            {compareIds.length} selected
-            {compareIds.length < 2 ? ' — pick at least 2' : ''}
+            {`เลือกแล้ว ${compareIds.length} คัน${compareIds.length < 2 ? ' — เลือกอย่างน้อย 2 คัน' : ''}`}
           </Text>
           <View style={styles.compareBarActions}>
             <TouchableOpacity onPress={() => setCompareIds([])}>
-              <Text style={styles.resetText}>Clear</Text>
+              <Text style={styles.resetText}>ล้าง</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.compareGo, compareIds.length < 2 && { opacity: 0.4 }]}
               disabled={compareIds.length < 2}
               onPress={goCompare}
             >
-              <Text style={styles.compareGoText}>Compare with AI</Text>
+              <Text style={styles.compareGoText}>เปรียบเทียบด้วย AI</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -640,7 +726,7 @@ export default function HomeScreen() {
                   <SearchIcon size={14} color="#E4001B" />
                   <TextInput
                     style={styles.searchOverlayInput}
-                    placeholder="Search cars..."
+                    placeholder="ค้นหาชื่อรถ รุ่น หรือประเภท..."
                     placeholderTextColor="#999"
                     value={searchDraft}
                     onChangeText={setSearchDraft}
@@ -650,11 +736,27 @@ export default function HomeScreen() {
                   />
                 </View>
                 <TouchableOpacity onPress={cancelSearch}>
-                  <Text style={styles.cancelText}>Cancel</Text>
+                  <Text style={styles.cancelText}>ยกเลิก</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.popularLabel}>Popular types</Text>
+              <Text style={styles.popularLabel}>ยี่ห้อ</Text>
+              <View style={styles.popularTags}>
+                {brands.filter((b) => b !== 'All').map((b) => (
+                  <TouchableOpacity
+                    key={b}
+                    style={styles.popularTag}
+                    onPress={() => {
+                      setFilter('brand', b);
+                      applySearch('');
+                    }}
+                  >
+                    <Text style={styles.popularTagText}>{b}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.popularLabel}>ประเภทรถ</Text>
               <View style={styles.popularTags}>
                 {types.filter((t) => t !== 'All').map((t) => (
                   <TouchableOpacity
@@ -689,10 +791,22 @@ const styles = StyleSheet.create({
   welcomeText: { fontSize: 12, color: C.muted, marginTop: 6, marginBottom: 4 },
 
   topBarActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  addBtn: { backgroundColor: C.red, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  aiBtn: { borderWidth: 1, borderColor: C.red, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1F0A0C' },
-  aiBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+
+  featureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  featureCard: {
+    flexGrow: 1,
+    flexBasis: 150,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  featureCardActive: { borderColor: C.red, backgroundColor: '#1F0A0C' },
+  featureIcon: { color: C.red, fontSize: 18, fontWeight: '900', marginBottom: 4 },
+  featureTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  featureDesc: { color: C.muted, fontSize: 11, marginTop: 2 },
+  detailHint: { color: C.muted, fontSize: 12, marginTop: 10 },
 
   searchPill: {
     flexDirection: 'row',
