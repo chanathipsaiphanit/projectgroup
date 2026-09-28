@@ -1,5 +1,5 @@
-import { Field, Pill, uiStyles } from '@/components/form-ui';
-import { C, CAR_TYPES, Car, FUELS, notify, TRANSMISSIONS } from '@/lib/cars';
+import { Field, Heading, Pill, uiStyles } from '@/components/form-ui';
+import { C, CAR_TYPES, Car, FUELS, notify, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -23,6 +23,7 @@ export type CarPayload = {
 
 type Props = {
   title: string;
+  titleEn: string;
   submitLabel: string;
   initial?: Partial<Car>;
   onSubmit: (payload: CarPayload) => Promise<void>;
@@ -43,7 +44,7 @@ const withExisting = (list: string[], current?: string) =>
   current && !list.includes(current) ? [current, ...list] : list;
 
 // Shared form for Add + Edit
-export default function CarForm({ title, submitLabel, initial = {}, onSubmit, onCancel }: Props) {
+export default function CarForm({ title, titleEn, submitLabel, initial = {}, onSubmit, onCancel }: Props) {
   const [f, setF] = useState({
     name: str(initial.name),
     model: str(initial.model),
@@ -66,12 +67,12 @@ export default function CarForm({ title, submitLabel, initial = {}, onSubmit, on
   const set = (key: keyof typeof f) => (value: string) => setF((prev) => ({ ...prev, [key]: value }));
 
   const handleSubmit = async () => {
-    if (!f.name.trim() || !f.model.trim()) return notify('Name and model are required');
+    if (!f.name.trim() || !f.model.trim()) return notify('กรุณากรอกชื่อรถและรุ่น');
     const price = numOrNull(f.price);
-    if (!price || price <= 0) return notify('Please enter a valid price');
+    if (!price || price <= 0) return notify('กรุณากรอกราคาให้ถูกต้อง');
     const year = numOrNull(f.year);
     const maxYear = new Date().getFullYear() + 1;
-    if (year != null && (year < 1950 || year > maxYear)) return notify(`Year must be between 1950 and ${maxYear}`);
+    if (year != null && (year < 1950 || year > maxYear)) return notify(`ปีรถต้องอยู่ระหว่าง 1950 ถึง ${maxYear}`);
 
     setSaving(true);
     try {
@@ -93,7 +94,7 @@ export default function CarForm({ title, submitLabel, initial = {}, onSubmit, on
         description: f.description.trim(),
       });
     } catch (err: any) {
-      notify(err?.message || 'Error connecting to server');
+      notify(err?.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     } finally {
       setSaving(false);
     }
@@ -101,59 +102,59 @@ export default function CarForm({ title, submitLabel, initial = {}, onSubmit, on
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{title}</Text>
+      <Heading style={styles.title} th={title} en={titleEn} />
 
-      <Text style={styles.section}>Basics</Text>
-      <Field label="Name *" placeholder="e.g. Honda Civic FE" value={f.name} onChangeText={set('name')} />
-      <Field label="Model / trim *" placeholder="e.g. EL+" value={f.model} onChangeText={set('model')} />
+      <Heading style={styles.section} th="ข้อมูลหลัก" en="Basics" />
+      <Field label="ชื่อรถ (ยี่ห้อ + รุ่น) *" placeholder="เช่น Honda Civic FE" value={f.name} onChangeText={set('name')} />
+      <Field label="รุ่นย่อย *" placeholder="เช่น EL+" value={f.model} onChangeText={set('model')} />
       <View style={styles.row}>
-        <Field label="Price (THB) *" placeholder="929000" value={f.price} onChangeText={set('price')} keyboardType="decimal-pad" />
-        <Field label="Stock" placeholder="1" value={f.stock} onChangeText={set('stock')} keyboardType="numeric" />
+        <Field label="ราคา (บาท) *" placeholder="929000" value={f.price} onChangeText={set('price')} keyboardType="decimal-pad" />
+        <Field label="จำนวนรถ (คัน)" placeholder="1" value={f.stock} onChangeText={set('stock')} keyboardType="numeric" />
       </View>
 
-      <Text style={uiStyles.sectionLabel}>Type</Text>
+      <Text style={uiStyles.sectionLabel}>ประเภทรถ</Text>
       <View style={styles.pillRow}>
         {withExisting(CAR_TYPES, initial.type).map((t) => (
-          <Pill key={t} label={t} active={type === t} onPress={() => setType(t)} />
+          <Pill key={t} label={thType(t)} active={type === t} onPress={() => setType(t)} />
         ))}
       </View>
 
-      <Text style={styles.section}>Details</Text>
+      <Heading style={styles.section} th="รายละเอียดรถ" en="Details" />
       <View style={styles.row}>
-        <Field label="Year" placeholder="2023" value={f.year} onChangeText={set('year')} keyboardType="numeric" />
-        <Field label="Mileage (km)" placeholder="18000" value={f.mileage} onChangeText={set('mileage')} keyboardType="numeric" />
+        <Field label="ปีรถ" placeholder="2023" value={f.year} onChangeText={set('year')} keyboardType="numeric" />
+        <Field label="เลขไมล์ (กม.)" placeholder="18000" value={f.mileage} onChangeText={set('mileage')} keyboardType="numeric" />
       </View>
       <View style={styles.row}>
-        <Field label="Seats" placeholder="5" value={f.seats} onChangeText={set('seats')} keyboardType="numeric" />
-        <Field label="Color" placeholder="White" value={f.color} onChangeText={set('color')} />
+        <Field label="จำนวนที่นั่ง" placeholder="5" value={f.seats} onChangeText={set('seats')} keyboardType="numeric" />
+        <Field label="สี" placeholder="เช่น ขาว" value={f.color} onChangeText={set('color')} />
       </View>
 
-      <Text style={uiStyles.sectionLabel}>Fuel</Text>
+      <Text style={uiStyles.sectionLabel}>เชื้อเพลิง</Text>
       <View style={styles.pillRow}>
         {withExisting(FUELS, initial.fuel).map((t) => (
-          <Pill key={t} label={t} active={fuel === t} onPress={() => setFuel(t)} />
+          <Pill key={t} label={thFuel(t)} active={fuel === t} onPress={() => setFuel(t)} />
         ))}
       </View>
 
       {fuel !== 'EV' && (
         <View style={styles.row}>
-          <Field label="Engine (cc)" placeholder="1500" value={f.engineCc} onChangeText={set('engineCc')} keyboardType="numeric" />
-          <Field label="Fuel economy (km/l)" placeholder="16.5" value={f.fuelEconomy} onChangeText={set('fuelEconomy')} keyboardType="decimal-pad" />
+          <Field label="ขนาดเครื่องยนต์ (ซีซี)" placeholder="1500" value={f.engineCc} onChangeText={set('engineCc')} keyboardType="numeric" />
+          <Field label="อัตราสิ้นเปลือง (กม./ลิตร)" placeholder="16.5" value={f.fuelEconomy} onChangeText={set('fuelEconomy')} keyboardType="decimal-pad" />
         </View>
       )}
 
-      <Text style={uiStyles.sectionLabel}>Transmission</Text>
+      <Text style={uiStyles.sectionLabel}>ระบบเกียร์</Text>
       <View style={styles.pillRow}>
         {withExisting(TRANSMISSIONS, initial.transmission).map((t) => (
-          <Pill key={t} label={t} active={transmission === t} onPress={() => setTransmission(t)} />
+          <Pill key={t} label={thTransmission(t)} active={transmission === t} onPress={() => setTransmission(t)} />
         ))}
       </View>
 
-      <Text style={styles.section}>Listing</Text>
-      <Field label="Image URL" placeholder="https://..." value={f.image} onChangeText={set('image')} autoCapitalize="none" />
+      <Heading style={styles.section} th="รูปและคำอธิบาย" en="Listing" />
+      <Field label="ลิงก์รูปรถ (URL)" placeholder="https://..." value={f.image} onChangeText={set('image')} autoCapitalize="none" />
       <Field
-        label="Description"
-        placeholder="Condition, service history, extras..."
+        label="คำอธิบาย"
+        placeholder="สภาพรถ ประวัติการเข้าศูนย์ ของแต่ง ฯลฯ"
         value={f.description}
         onChangeText={set('description')}
         multiline
@@ -164,7 +165,7 @@ export default function CarForm({ title, submitLabel, initial = {}, onSubmit, on
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>{submitLabel}</Text>}
       </TouchableOpacity>
       <TouchableOpacity style={styles.backBtn} onPress={onCancel}>
-        <Text style={styles.backText}>Cancel</Text>
+        <Text style={styles.backText}>ยกเลิก</Text>
       </TouchableOpacity>
     </ScrollView>
   );

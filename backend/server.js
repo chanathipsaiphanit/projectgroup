@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -9,6 +10,9 @@ const ai = require('./ai');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Car photos: GET /cars/<file>.jpg serves backend/public/cars/<file>.jpg
+app.use('/cars', express.static(path.join(__dirname, 'public', 'cars'), { maxAge: '7d' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mysecretkey';
 
@@ -23,19 +27,19 @@ const fail = (res, code, error) => res.status(code).json({ success: false, error
 function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return fail(res, 401, 'Missing token');
+  if (!token) return fail(res, 401, 'กรุณาเข้าสู่ระบบก่อน');
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (err) {
-    return fail(res, 401, 'Invalid or expired token');
+    return fail(res, 401, 'การเข้าสู่ระบบหมดอายุ กรุณาเข้าสู่ระบบใหม่');
   }
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!roles.includes(req.user?.role)) {
-      return fail(res, 403, `This action requires a ${roles.join(' or ')} account`);
+      return fail(res, 403, `ต้องใช้บัญชี${roles.map((r) => ({ user: 'ผู้ซื้อ', seller: 'ผู้ขาย', admin: 'แอดมิน' })[r] || r).join('หรือ')}`);
     }
     next();
   };
@@ -119,7 +123,7 @@ app.get('/api/inventory/search', async (req, res) => {
     res.json({ items, total: totalResult[0].total, page, limit });
   } catch (err) {
     console.error('Search error:', err.message);
-    fail(res, 500, 'Failed to fetch inventory');
+    fail(res, 500, 'โหลดรายการรถไม่สำเร็จ');
   }
 });
 
@@ -127,7 +131,7 @@ app.get('/api/inventory/search', async (req, res) => {
 app.get('/api/inventory/:id', async (req, res) => {
   try {
     const car = await findCar(req.params.id);
-    if (!car) return fail(res, 404, 'Car not found');
+    if (!car) return fail(res, 404, 'ไม่พบรถคันนี้');
     res.json(car);
   } catch (err) {
     console.error('Detail error:', err.message);
@@ -139,7 +143,7 @@ app.get('/api/inventory/:id', async (req, res) => {
 app.post('/api/inventory', verifyToken, requireRole('seller', 'admin'), async (req, res) => {
   try {
     const car = readCarBody(req.body);
-    if (!car.name || !car.model) return fail(res, 400, 'Name and model are required');
+    if (!car.name || !car.model) return fail(res, 400, 'กรุณากรอกชื่อรถและรุ่น');
 
     const columns = [...CAR_COLUMNS, 'seller_id'];
     const values = [...CAR_COLUMNS.map((c) => car[c]), req.user.id];
@@ -158,11 +162,11 @@ app.post('/api/inventory', verifyToken, requireRole('seller', 'admin'), async (r
 app.put('/api/inventory/:id', verifyToken, async (req, res) => {
   try {
     const existing = await findCar(req.params.id);
-    if (!existing) return fail(res, 404, 'Car not found');
-    if (!canManageCar(req.user, existing)) return fail(res, 403, 'You can only edit your own listings');
+    if (!existing) return fail(res, 404, 'ไม่พบรถคันนี้');
+    if (!canManageCar(req.user, existing)) return fail(res, 403, 'แก้ไขได้เฉพาะรถที่คุณลงขายเอง');
 
     const car = readCarBody(req.body);
-    if (!car.name || !car.model) return fail(res, 400, 'Name and model are required');
+    if (!car.name || !car.model) return fail(res, 400, 'กรุณากรอกชื่อรถและรุ่น');
 
     const [result] = await db.query(
       `UPDATE Inventory SET ${CAR_COLUMNS.map((c) => `\`${c}\` = ?`).join(', ')} WHERE id = ?`,
@@ -179,8 +183,8 @@ app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const existing = await findCar(id);
-    if (!existing) return fail(res, 404, 'Car not found');
-    if (!canManageCar(req.user, existing)) return fail(res, 403, 'You can only delete your own listings');
+    if (!existing) return fail(res, 404, 'ไม่พบรถคันนี้');
+    if (!canManageCar(req.user, existing)) return fail(res, 403, 'ลบได้เฉพาะรถที่คุณลงขายเอง');
 
     // Clean up chats about this car too
     await db.query('DELETE m FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE c.car_id = ?', [id]);
@@ -191,7 +195,7 @@ app.delete('/api/inventory/:id', verifyToken, async (req, res) => {
     res.json({ success: true, message: 'Car deleted successfully' });
   } catch (err) {
     console.error('Delete error:', err.message);
-    fail(res, 500, 'Failed to delete car: ' + err.message);
+    fail(res, 500, 'ลบรถไม่สำเร็จ: ' + err.message);
   }
 });
 
@@ -202,7 +206,7 @@ app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
     if (!username || !email || !password) {
-      return fail(res, 400, 'Username, email and password are required');
+      return fail(res, 400, 'กรุณากรอกชื่อผู้ใช้ อีเมล และรหัสผ่าน');
     }
     const role = SIGNUP_ROLES.includes(req.body.role) ? req.body.role : 'user';
 
@@ -215,8 +219,8 @@ app.post('/api/register', async (req, res) => {
     res.json({ success: true, message: 'User registered successfully', userId: result.insertId });
   } catch (err) {
     console.error('Register error:', err.message);
-    if (err.code === 'ER_DUP_ENTRY') return fail(res, 400, 'Username or email already exists');
-    fail(res, 500, 'Failed to register: ' + err.message);
+    if (err.code === 'ER_DUP_ENTRY') return fail(res, 400, 'ชื่อผู้ใช้หรืออีเมลนี้มีคนใช้แล้ว');
+    fail(res, 500, 'สมัครสมาชิกไม่สำเร็จ: ' + err.message);
   }
 });
 
@@ -226,14 +230,14 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) return fail(res, 400, 'Username and password are required');
+    if (!username || !password) return fail(res, 400, 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
 
     const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
-    if (rows.length === 0) return fail(res, 401, 'Invalid username or password');
+    if (rows.length === 0) return fail(res, 401, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 
     const user = rows[0];
     const passwordMatches = await bcrypt.compare(password, user.password);
-    if (!passwordMatches) return fail(res, 401, 'Invalid username or password');
+    if (!passwordMatches) return fail(res, 401, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -245,7 +249,7 @@ app.post('/api/login', async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err.message);
-    fail(res, 500, 'Server error: ' + err.message);
+    fail(res, 500, 'เซิร์ฟเวอร์ขัดข้อง: ' + err.message);
   }
 });
 
@@ -279,16 +283,16 @@ app.post('/api/conversations', verifyToken, async (req, res) => {
     const message = String(req.body.message || '').trim();
 
     const [cars] = await db.query('SELECT id, seller_id FROM Inventory WHERE id = ?', [carId]);
-    if (!cars.length) return fail(res, 404, 'Car not found');
+    if (!cars.length) return fail(res, 404, 'ไม่พบรถคันนี้');
 
     // Cars listed before sellers existed belong to the shop — route to an admin
     let sellerId = cars[0].seller_id;
     if (sellerId == null) {
       const [admins] = await db.query("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1");
-      if (!admins.length) return fail(res, 400, 'This car has no seller to contact yet');
+      if (!admins.length) return fail(res, 400, 'รถคันนี้ยังไม่มีผู้ขายให้ติดต่อ');
       sellerId = admins[0].id;
     }
-    if (Number(sellerId) === Number(req.user.id)) return fail(res, 400, 'This is your own listing');
+    if (Number(sellerId) === Number(req.user.id)) return fail(res, 400, 'นี่คือรถที่คุณลงขายเอง');
 
     // LAST_INSERT_ID(id) makes insertId return the existing row on duplicate
     const [result] = await db.query(
@@ -305,7 +309,7 @@ app.post('/api/conversations', verifyToken, async (req, res) => {
     res.json({ success: true, conversationId });
   } catch (err) {
     console.error('Start conversation error:', err.message);
-    fail(res, 500, 'Failed to contact seller');
+    fail(res, 500, 'ติดต่อผู้ขายไม่สำเร็จ');
   }
 });
 
@@ -329,14 +333,14 @@ app.get('/api/conversations', verifyToken, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Inbox error:', err.message);
-    fail(res, 500, 'Failed to load conversations');
+    fail(res, 500, 'โหลดรายการแชทไม่สำเร็จ');
   }
 });
 
 app.get('/api/conversations/:id', verifyToken, async (req, res) => {
   try {
     const conv = await loadConversation(req.params.id, req.user.id);
-    if (!conv) return fail(res, 404, 'Conversation not found');
+    if (!conv) return fail(res, 404, 'ไม่พบแชทนี้');
 
     const [messages] = await db.query(
       'SELECT id, sender_id, body, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC',
@@ -351,24 +355,24 @@ app.get('/api/conversations/:id', verifyToken, async (req, res) => {
     res.json({ success: true, conversation: conv, messages, appointments });
   } catch (err) {
     console.error('Conversation error:', err.message);
-    fail(res, 500, 'Failed to load conversation');
+    fail(res, 500, 'โหลดแชทไม่สำเร็จ');
   }
 });
 
 app.post('/api/conversations/:id/messages', verifyToken, async (req, res) => {
   try {
     const conv = await loadConversation(req.params.id, req.user.id);
-    if (!conv) return fail(res, 404, 'Conversation not found');
+    if (!conv) return fail(res, 404, 'ไม่พบแชทนี้');
     const body = String(req.body.body || '').trim();
-    if (!body) return fail(res, 400, 'Message cannot be empty');
-    if (body.length > 2000) return fail(res, 400, 'Message is too long');
+    if (!body) return fail(res, 400, 'กรุณาพิมพ์ข้อความ');
+    if (body.length > 2000) return fail(res, 400, 'ข้อความยาวเกินไป');
 
     const [result] = await db.query('INSERT INTO messages (conversation_id, sender_id, body) VALUES (?, ?, ?)', [conv.id, req.user.id, body]);
     await touchConversation(conv.id);
     res.json({ success: true, id: result.insertId });
   } catch (err) {
     console.error('Send message error:', err.message);
-    fail(res, 500, 'Failed to send message');
+    fail(res, 500, 'ส่งข้อความไม่สำเร็จ');
   }
 });
 
@@ -379,18 +383,18 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 app.post('/api/conversations/:id/appointments', verifyToken, async (req, res) => {
   try {
     const conv = await loadConversation(req.params.id, req.user.id);
-    if (!conv) return fail(res, 404, 'Conversation not found');
+    if (!conv) return fail(res, 404, 'ไม่พบแชทนี้');
 
     const date = String(req.body.date || '').trim();
     const time = String(req.body.time || '').trim();
     const location = String(req.body.location || '').trim();
     const note = String(req.body.note || '').trim() || null;
 
-    if (!DATE_RE.test(date) || !TIME_RE.test(time)) return fail(res, 400, 'Use date YYYY-MM-DD and time HH:MM');
+    if (!DATE_RE.test(date) || !TIME_RE.test(time)) return fail(res, 400, 'กรุณาใส่วันที่แบบ YYYY-MM-DD และเวลาแบบ HH:MM');
     const when = new Date(`${date}T${time}:00`);
-    if (Number.isNaN(when.getTime())) return fail(res, 400, 'Invalid date');
-    if (when.getTime() < Date.now()) return fail(res, 400, 'The appointment must be in the future');
-    if (!location) return fail(res, 400, 'Location is required');
+    if (Number.isNaN(when.getTime())) return fail(res, 400, 'วันที่ไม่ถูกต้อง');
+    if (when.getTime() < Date.now()) return fail(res, 400, 'วันนัดต้องเป็นวันในอนาคต');
+    if (!location) return fail(res, 400, 'กรุณาระบุสถานที่นัด');
 
     const [result] = await db.query(
       'INSERT INTO appointments (conversation_id, proposed_by, appointment_at, location, note) VALUES (?, ?, ?, ?, ?)',
@@ -400,7 +404,7 @@ app.post('/api/conversations/:id/appointments', verifyToken, async (req, res) =>
     res.json({ success: true, id: result.insertId });
   } catch (err) {
     console.error('Appointment error:', err.message);
-    fail(res, 500, 'Failed to create appointment');
+    fail(res, 500, 'สร้างนัดไม่สำเร็จ');
   }
 });
 
@@ -408,21 +412,21 @@ app.post('/api/conversations/:id/appointments', verifyToken, async (req, res) =>
 app.patch('/api/appointments/:id', verifyToken, async (req, res) => {
   try {
     const status = req.body.status;
-    if (!['accepted', 'declined', 'cancelled'].includes(status)) return fail(res, 400, 'Invalid status');
+    if (!['accepted', 'declined', 'cancelled'].includes(status)) return fail(res, 400, 'สถานะไม่ถูกต้อง');
 
     const [rows] = await db.query('SELECT * FROM appointments WHERE id = ?', [req.params.id]);
     const appt = rows[0];
-    if (!appt) return fail(res, 404, 'Appointment not found');
+    if (!appt) return fail(res, 404, 'ไม่พบนัดหมายนี้');
     const conv = await loadConversation(appt.conversation_id, req.user.id);
-    if (!conv) return fail(res, 404, 'Appointment not found');
+    if (!conv) return fail(res, 404, 'ไม่พบนัดหมายนี้');
 
     const isProposer = Number(appt.proposed_by) === Number(req.user.id);
     if (status === 'cancelled') {
-      if (!isProposer) return fail(res, 403, 'Only the person who proposed it can cancel');
-      if (!['pending', 'accepted'].includes(appt.status)) return fail(res, 400, 'This appointment is already closed');
+      if (!isProposer) return fail(res, 403, 'ยกเลิกได้เฉพาะคนที่เสนอนัด');
+      if (!['pending', 'accepted'].includes(appt.status)) return fail(res, 400, 'นัดนี้ปิดไปแล้ว');
     } else {
-      if (isProposer) return fail(res, 403, 'Waiting for the other person to respond');
-      if (appt.status !== 'pending') return fail(res, 400, 'This appointment was already answered');
+      if (isProposer) return fail(res, 403, 'กำลังรออีกฝ่ายตอบกลับ');
+      if (appt.status !== 'pending') return fail(res, 400, 'นัดนี้ถูกตอบไปแล้ว');
     }
 
     await db.query('UPDATE appointments SET status = ? WHERE id = ?', [status, appt.id]);
@@ -430,7 +434,7 @@ app.patch('/api/appointments/:id', verifyToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Update appointment error:', err.message);
-    fail(res, 500, 'Failed to update appointment');
+    fail(res, 500, 'อัปเดตนัดหมายไม่สำเร็จ');
   }
 });
 
@@ -446,7 +450,7 @@ app.post('/api/ai/recommend', async (req, res) => {
     res.json({ success: true, ...result, summary: summary.text, summarySource: summary.source });
   } catch (err) {
     console.error('AI recommend error:', err.message);
-    fail(res, 500, 'AI analysis failed');
+    fail(res, 500, 'AI วิเคราะห์ไม่สำเร็จ');
   }
 });
 
@@ -454,17 +458,17 @@ app.post('/api/ai/compare', async (req, res) => {
   try {
     const rawIds = Array.isArray(req.body.ids) ? req.body.ids : String(req.body.ids || '').split(',');
     const ids = [...new Set(rawIds.map(Number).filter(Number.isFinite))];
-    if (ids.length < 2 || ids.length > 4) return fail(res, 400, 'Pick 2 to 4 cars to compare');
+    if (ids.length < 2 || ids.length > 4) return fail(res, 400, 'กรุณาเลือกรถ 2–4 คันเพื่อเปรียบเทียบ');
 
     const [rows] = await db.query(CAR_SELECT);
     const result = ai.compare(rows, ids, req.body.priorities || {});
-    if (result.cars.length < 2) return fail(res, 404, 'Some of those cars no longer exist');
+    if (result.cars.length < 2) return fail(res, 404, 'รถบางคันที่เลือกไม่มีในระบบแล้ว');
 
     const summary = await ai.summarizeComparison(result);
     res.json({ success: true, ...result, summary: summary.text, summarySource: summary.source });
   } catch (err) {
     console.error('AI compare error:', err.message);
-    fail(res, 500, 'Comparison failed');
+    fail(res, 500, 'เปรียบเทียบไม่สำเร็จ');
   }
 });
 

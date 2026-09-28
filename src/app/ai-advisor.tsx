@@ -1,17 +1,17 @@
-import { Field, Pill, uiStyles } from '@/components/form-ui';
+import { Field, Heading, Pill, uiStyles } from '@/components/form-ui';
 import { api } from '@/config';
-import { C, formatTHB, FUELS, notify, TRANSMISSIONS } from '@/lib/cars';
+import { C, formatTHB, FUELS, notify, resolveImage, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const USAGES = [
-  { key: 'city', label: 'City driving' },
-  { key: 'family', label: 'Family' },
-  { key: 'long_trip', label: 'Long trips' },
-  { key: 'offroad', label: 'Off-road / upcountry' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'economy', label: 'Low running cost' },
+  { key: 'city', label: 'ขับในเมือง' },
+  { key: 'family', label: 'ใช้กับครอบครัว' },
+  { key: 'long_trip', label: 'เดินทางไกล' },
+  { key: 'offroad', label: 'ออฟโรด / ต่างจังหวัด' },
+  { key: 'performance', label: 'สมรรถนะ / ขับสนุก' },
+  { key: 'economy', label: 'ค่าใช้จ่ายต่ำ' },
 ];
 
 type AiCar = {
@@ -70,7 +70,7 @@ export default function AiAdvisorScreen() {
 
   const analyze = async () => {
     if (!budget.trim() && usages.length === 0) {
-      notify('Tell us at least your budget or how you will use the car');
+      notify('กรุณากรอกงบประมาณ หรือเลือกลักษณะการใช้งานอย่างน้อย 1 อย่าง');
       return;
     }
     setLoading(true);
@@ -89,10 +89,10 @@ export default function AiAdvisorScreen() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      if (!res.ok) throw new Error(data.error || 'วิเคราะห์ไม่สำเร็จ');
       setResult(data);
     } catch (err: any) {
-      notify(err.message || 'Cannot connect to server');
+      notify(err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     } finally {
       setLoading(false);
     }
@@ -108,46 +108,46 @@ export default function AiAdvisorScreen() {
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
         <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
-          <Text style={styles.back}>{'←'} Back</Text>
+          <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>✦ AI Car Advisor</Text>
+        <Heading style={styles.title} th="✦ AI แนะนำรถ" en="AI Car Advisor" />
         <Text style={styles.subtitle}>
-          Tell us how you'll use the car and your budget — we'll score every car in stock and suggest a budget that fits.
+          บอกเราว่าจะใช้รถแบบไหนและมีงบเท่าไหร่ ระบบจะให้คะแนนรถมือสองทุกคันในสต็อก และแนะนำงบประมาณที่เหมาะกับคุณ
         </Text>
 
         {/* ---------- Form ---------- */}
         <View style={styles.panel}>
           <View style={styles.row}>
-            <Field label="Budget (THB)" placeholder="e.g. 900000" value={budget} onChangeText={setBudget} keyboardType="numeric" />
-            <Field label="Monthly income (optional)" placeholder="e.g. 50000" value={income} onChangeText={setIncome} keyboardType="numeric" />
-            <Field label="Passengers" placeholder="e.g. 5" value={passengers} onChangeText={setPassengers} keyboardType="numeric" />
+            <Field label="งบประมาณ (บาท)" placeholder="เช่น 900000" value={budget} onChangeText={setBudget} keyboardType="numeric" />
+            <Field label="รายได้ต่อเดือน (ไม่บังคับ)" placeholder="เช่น 50000" value={income} onChangeText={setIncome} keyboardType="numeric" />
+            <Field label="จำนวนผู้โดยสาร" placeholder="เช่น 5" value={passengers} onChangeText={setPassengers} keyboardType="numeric" />
           </View>
 
-          <Text style={uiStyles.sectionLabel}>How will you use it? (pick any)</Text>
+          <Text style={uiStyles.sectionLabel}>ใช้รถทำอะไรบ้าง? (เลือกได้หลายข้อ)</Text>
           <View style={styles.pills}>
             {USAGES.map((u) => (
               <Pill key={u.key} small label={u.label} active={usages.includes(u.key)} onPress={() => toggleUsage(u.key)} />
             ))}
           </View>
 
-          <Text style={uiStyles.sectionLabel}>Fuel preference</Text>
+          <Text style={uiStyles.sectionLabel}>เชื้อเพลิงที่ต้องการ</Text>
           <View style={styles.pills}>
             {['Any', ...FUELS].map((f) => (
-              <Pill key={f} small label={f} active={fuel === f} onPress={() => setFuel(f)} />
+              <Pill key={f} small label={f === 'Any' ? 'ไม่ระบุ' : thFuel(f)} active={fuel === f} onPress={() => setFuel(f)} />
             ))}
           </View>
 
-          <Text style={uiStyles.sectionLabel}>Transmission</Text>
+          <Text style={uiStyles.sectionLabel}>ระบบเกียร์</Text>
           <View style={styles.pills}>
             {['Any', ...TRANSMISSIONS].map((t) => (
-              <Pill key={t} small label={t} active={transmission === t} onPress={() => setTransmission(t)} />
+              <Pill key={t} small label={t === 'Any' ? 'ไม่ระบุ' : thTransmission(t)} active={transmission === t} onPress={() => setTransmission(t)} />
             ))}
           </View>
 
           <Field
-            label="Anything else? (optional)"
-            placeholder="e.g. I drive Bangkok–Chonburi every weekend"
+            label="ข้อมูลเพิ่มเติม (ไม่บังคับ)"
+            placeholder="เช่น ขับกรุงเทพ–ชลบุรีทุกสุดสัปดาห์"
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -155,7 +155,7 @@ export default function AiAdvisorScreen() {
           />
 
           <TouchableOpacity style={uiStyles.primaryBtn} onPress={analyze} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>Analyze with AI</Text>}
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>วิเคราะห์ด้วย AI</Text>}
           </TouchableOpacity>
         </View>
 
@@ -164,18 +164,18 @@ export default function AiAdvisorScreen() {
           <>
             <View style={styles.summaryCard}>
               <View style={styles.summaryHead}>
-                <Text style={styles.summaryTitle}>AI summary</Text>
-                <Text style={styles.sourceTag}>{result.summarySource === 'claude' ? 'Claude' : 'Scoring model'}</Text>
+                <Heading style={styles.summaryTitle} th="สรุปจาก AI" en="AI Summary" />
+                <Text style={styles.sourceTag}>{result.summarySource === 'claude' ? 'Claude AI' : 'โมเดลให้คะแนน'}</Text>
               </View>
               <Text style={styles.summaryText}>{result.summary}</Text>
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.blockTitle}>Budget analysis</Text>
+              <Heading style={styles.blockTitle} th="วิเคราะห์งบประมาณ" en="Budget Analysis" />
               <View style={styles.statRow}>
                 {result.budget.suggestedMin != null && (
                   <View style={styles.stat}>
-                    <Text style={styles.statLabel}>Suggested range</Text>
+                    <Text style={styles.statLabel}>ช่วงราคาที่แนะนำ</Text>
                     <Text style={styles.statValue}>
                       {formatTHB(result.budget.suggestedMin)} – {formatTHB(result.budget.suggestedMax)}
                     </Text>
@@ -183,9 +183,9 @@ export default function AiAdvisorScreen() {
                 )}
                 {result.budget.affordableMax != null && (
                   <View style={styles.stat}>
-                    <Text style={styles.statLabel}>Affordable up to</Text>
+                    <Text style={styles.statLabel}>ซื้อได้สบายๆ ไม่เกิน</Text>
                     <Text style={styles.statValue}>{formatTHB(result.budget.affordableMax)}</Text>
-                    <Text style={styles.statHint}>≤ {formatTHB(result.budget.maxMonthly)}/month</Text>
+                    <Text style={styles.statHint}>{`ค่างวด ≤ ${formatTHB(result.budget.maxMonthly)}/เดือน`}</Text>
                   </View>
                 )}
               </View>
@@ -195,10 +195,10 @@ export default function AiAdvisorScreen() {
             </View>
 
             <View style={styles.resultsHead}>
-              <Text style={styles.blockTitle}>Top matches ({result.results.length} of {result.considered} in stock)</Text>
+              <Heading style={styles.blockTitle} th={`รถที่เหมาะกับคุณ (${result.results.length} จาก ${result.considered} คันในสต็อก)`} en="Top Matches" />
               {result.results.length >= 2 && (
                 <TouchableOpacity onPress={compareTop}>
-                  <Text style={styles.link}>Compare top picks ⇄</Text>
+                  <Text style={styles.link}>เปรียบเทียบคันที่ดีที่สุด ⇄</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -211,7 +211,7 @@ export default function AiAdvisorScreen() {
               >
                 <View style={styles.thumb}>
                   {r.car.image ? (
-                    <Image source={{ uri: r.car.image }} style={styles.thumbImg} />
+                    <Image source={{ uri: resolveImage(r.car.image) }} style={styles.thumbImg} />
                   ) : (
                     <Text style={styles.thumbText}>NOON</Text>
                   )}
@@ -227,13 +227,13 @@ export default function AiAdvisorScreen() {
                     <View style={[styles.barFill, { width: `${r.score}%` }]} />
                   </View>
                   <Text style={styles.meta}>
-                    {[r.car.year, r.car.type, r.car.fuel].filter(Boolean).join(' · ')}
+                    {[r.car.year, r.car.type && thType(r.car.type), r.car.fuel && thFuel(r.car.fuel)].filter(Boolean).join(' · ')}
                   </Text>
                   <Text style={styles.price}>
                     {formatTHB(r.car.price)}
-                    <Text style={styles.monthly}>  ≈ {formatTHB(r.monthly)}/mo</Text>
+                    <Text style={styles.monthly}>{`  ≈ ${formatTHB(r.monthly)}/เดือน`}</Text>
                   </Text>
-                  {r.budgetStatus === 'stretch' && <Text style={styles.stretch}>Slightly over budget</Text>}
+                  {r.budgetStatus === 'stretch' && <Text style={styles.stretch}>เกินงบเล็กน้อย</Text>}
                   {r.reasons.map((reason) => (
                     <Text key={reason} style={styles.reason}>✓ {reason}</Text>
                   ))}
@@ -242,7 +242,7 @@ export default function AiAdvisorScreen() {
             ))}
 
             <Text style={styles.disclaimer}>
-              Installments are estimates (25% down, 5 years, 2.99% flat rate). Actual finance terms depend on the lender.
+              ค่างวดเป็นการประมาณ (ดาวน์ 25%, ผ่อน 5 ปี, ดอกเบี้ยคงที่ 2.99% ต่อปี) เงื่อนไขจริงขึ้นอยู่กับไฟแนนซ์
             </Text>
           </>
         )}
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   blockTitle: { color: '#fff', fontWeight: '800', fontSize: 15, marginBottom: 10 },
   statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
   stat: { flexGrow: 1, flexBasis: 200, padding: 12, borderRadius: 8, backgroundColor: C.input },
-  statLabel: { color: C.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
+  statLabel: { color: C.muted, fontSize: 12, fontWeight: '700' },
   statValue: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 4 },
   statHint: { color: C.muted, fontSize: 12, marginTop: 2 },
   note: { color: C.soft, fontSize: 13, lineHeight: 20, marginTop: 4 },

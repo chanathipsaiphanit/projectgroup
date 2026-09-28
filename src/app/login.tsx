@@ -23,7 +23,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!username.trim() || !password) {
-      alert('Please fill in all fields');
+      alert('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน');
       return;
     }
 
@@ -46,16 +46,16 @@ export default function LoginScreen() {
         });
 
         if (Platform.OS === 'web') {
-          window.alert(`Welcome back, ${data.user.username} (${data.user.role})`);
+          window.alert(`ยินดีต้อนรับ ${data.user.username} (${({ user: 'ผู้ซื้อ', seller: 'ผู้ขาย', admin: 'แอดมิน' } as Record<string, string>)[data.user.role] ?? data.user.role})`);
         }
 
         router.replace('/');
       } else {
-        alert(data.error || 'Login failed');
+        alert(data.error || 'เข้าสู่ระบบไม่สำเร็จ');
       }
     } catch (err) {
       console.error(err);
-      alert('Cannot connect to server');
+      alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     } finally {
       setLoading(false);
     }
@@ -69,11 +69,11 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.brandTitle}>Noon Home Car</Text>
         <View style={styles.brandAccent} />
-        <Text style={styles.subtitle}>Sign in with your account</Text>
+        <Text style={styles.subtitle}>ตลาดรถมือสอง · เข้าสู่ระบบ (Sign In)</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Username"
+          placeholder="ชื่อผู้ใช้"
           placeholderTextColor="#888"
           value={username}
           onChangeText={setUsername}
@@ -82,7 +82,7 @@ export default function LoginScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Password"
+          placeholder="รหัสผ่าน"
           placeholderTextColor="#888"
           secureTextEntry
           value={password}
@@ -95,16 +95,16 @@ export default function LoginScreen() {
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.loginBtnText}>Sign In</Text>
+            <Text style={styles.loginBtnText}>เข้าสู่ระบบ</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.registerLink} onPress={() => router.push('/register')}>
-          <Text style={styles.registerLinkText}>Don't have an account? Sign Up</Text>
+          <Text style={styles.registerLinkText}>ยังไม่มีบัญชี? สมัครสมาชิก</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.registerLink} onPress={() => router.replace('/')}>
-          <Text style={styles.registerLinkText}>Browse cars without signing in</Text>
+          <Text style={styles.registerLinkText}>ดูรถโดยไม่ต้องเข้าสู่ระบบ</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

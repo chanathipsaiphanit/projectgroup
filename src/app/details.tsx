@@ -1,4 +1,4 @@
-import { uiStyles } from '@/components/form-ui';
+import { Heading, uiStyles } from '@/components/form-ui';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import {
@@ -11,6 +11,10 @@ import {
   formatTHB,
   normalizeCar,
   notify,
+  thColor,
+  thFuel,
+  thTransmission,
+  thType,
 } from '@/lib/cars';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -73,7 +77,7 @@ export default function CarDetailScreen() {
   if (!car) {
     return (
       <SafeAreaView style={[styles.screen, styles.center]}>
-        {loading ? <ActivityIndicator color={C.red} /> : <Text style={styles.muted}>Car not found</Text>}
+        {loading ? <ActivityIndicator color={C.red} /> : <Text style={styles.muted}>ไม่พบรถคันนี้</Text>}
       </SafeAreaView>
     );
   }
@@ -82,16 +86,16 @@ export default function CarDetailScreen() {
   const canManage = canManageCar(user, car);
 
   const specs: [string, string][] = [
-    ['Model', car.model || '—'],
-    ['Type', car.type || 'General'],
-    ['Year', car.year ? String(car.year) : '—'],
-    ['Mileage', formatKm(car.mileage)],
-    ['Fuel', car.fuel || '—'],
-    ['Transmission', car.transmission || '—'],
-    ['Seats', car.seats ? String(car.seats) : '—'],
-    ['Engine', car.fuel === 'EV' ? 'Electric' : car.engineCc ? `${car.engineCc.toLocaleString()} cc` : '—'],
-    ['Economy', car.fuel === 'EV' ? '—' : car.fuelEconomy ? `${car.fuelEconomy} km/l` : '—'],
-    ['Color', car.color || '—'],
+    ['รุ่น', car.model || '—'],
+    ['ประเภทรถ', car.type ? thType(car.type) : 'ทั่วไป'],
+    ['ปีรถ', car.year ? String(car.year) : '—'],
+    ['เลขไมล์', formatKm(car.mileage)],
+    ['เชื้อเพลิง', thFuel(car.fuel)],
+    ['ระบบเกียร์', thTransmission(car.transmission)],
+    ['จำนวนที่นั่ง', car.seats ? `${car.seats} ที่นั่ง` : '—'],
+    ['เครื่องยนต์', car.fuel === 'EV' ? 'มอเตอร์ไฟฟ้า' : car.engineCc ? `${car.engineCc.toLocaleString()} ซีซี` : '—'],
+    ['อัตราสิ้นเปลือง', car.fuel === 'EV' ? '—' : car.fuelEconomy ? `${car.fuelEconomy} กม./ลิตร` : '—'],
+    ['สี', thColor(car.color)],
   ];
 
   const confirmDelete = async () => {
@@ -102,24 +106,24 @@ export default function CarDetailScreen() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        notify('Car deleted successfully');
+        notify('ลบรถเรียบร้อยแล้ว');
         router.back();
       } else {
-        notify(data.error || 'Failed to delete car');
+        notify(data.error || 'ลบรถไม่สำเร็จ');
       }
     } catch (err) {
       console.error(err);
-      notify('Unable to delete car');
+      notify('ไม่สามารถลบรถได้');
     }
   };
 
   const openContact = () => {
     if (!user) {
-      notify('Please sign in to contact the seller');
+      notify('กรุณาเข้าสู่ระบบก่อนติดต่อผู้ขาย');
       router.push('/login');
       return;
     }
-    setMessage(`Hi, is the ${car.name} still available?`);
+    setMessage(`สวัสดีครับ/ค่ะ ${car.name} คันนี้ยังอยู่ไหม?`);
     setContactOpen(true);
   };
 
@@ -133,11 +137,11 @@ export default function CarDetailScreen() {
         body: JSON.stringify({ carId: car.id, message: message.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not contact seller');
+      if (!res.ok) throw new Error(data.error || 'ติดต่อผู้ขายไม่สำเร็จ');
       setContactOpen(false);
       router.push({ pathname: '/chat', params: { id: String(data.conversationId) } });
     } catch (err: any) {
-      notify(err.message || 'Cannot connect to server');
+      notify(err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     } finally {
       setSending(false);
     }
@@ -147,7 +151,7 @@ export default function CarDetailScreen() {
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.pageInner}>
         <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
-          <Text style={styles.backLinkText}>{'←'} Back</Text>
+          <Text style={styles.backLinkText}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
 
         <View style={[styles.layout, isWide && styles.layoutWide]}>
@@ -165,12 +169,12 @@ export default function CarDetailScreen() {
 
             <View style={[styles.stockBadge, isLow && styles.stockBadgeLow]}>
               <Text style={styles.stockBadgeText}>
-                {car.stock === 0 ? 'SOLD OUT' : `${car.stock} IN STOCK`}
+                {car.stock === 0 ? 'ขายแล้ว' : `มีรถพร้อมขาย ${car.stock} คัน`}
               </Text>
             </View>
 
             <View style={styles.sellerBox}>
-              <Text style={styles.sellerLabel}>Sold by</Text>
+              <Heading style={styles.sellerLabel} th="ผู้ขาย" en="Seller" />
               <Text style={styles.sellerName}>{car.sellerName || 'Noon Home Car'}</Text>
             </View>
 
@@ -180,18 +184,18 @@ export default function CarDetailScreen() {
                   style={[uiStyles.outlineBtn, { flex: 1 }]}
                   onPress={() => router.push({ pathname: '/edit', params: { car: JSON.stringify(car) } })}
                 >
-                  <Text style={uiStyles.outlineBtnText}>Edit Car</Text>
+                  <Text style={uiStyles.outlineBtnText}>แก้ไขข้อมูลรถ</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[uiStyles.primaryBtn, { flex: 1 }]}
-                  onPress={() => confirmAction('Delete car', `Are you sure you want to delete "${car.name}"?`, confirmDelete)}
+                  onPress={() => confirmAction('ลบรถ', `ต้องการลบ "${car.name}" ใช่ไหม?`, confirmDelete, 'ลบ')}
                 >
-                  <Text style={uiStyles.primaryBtnText}>Delete</Text>
+                  <Text style={uiStyles.primaryBtnText}>ลบรถ</Text>
                 </TouchableOpacity>
               </View>
             ) : contactOpen ? (
               <View style={styles.contactBox}>
-                <Text style={styles.sellerLabel}>Message to seller</Text>
+                <Heading style={styles.sellerLabel} th="ข้อความถึงผู้ขาย" en="Message to Seller" />
                 <TextInput
                   style={styles.contactInput}
                   value={message}
@@ -201,22 +205,22 @@ export default function CarDetailScreen() {
                 />
                 <View style={styles.btnRow}>
                   <TouchableOpacity style={[uiStyles.outlineBtn, { flex: 1 }]} onPress={() => setContactOpen(false)}>
-                    <Text style={uiStyles.outlineBtnText}>Cancel</Text>
+                    <Text style={uiStyles.outlineBtnText}>ยกเลิก</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[uiStyles.primaryBtn, { flex: 1 }]} onPress={startConversation} disabled={sending}>
-                    {sending ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>Send</Text>}
+                    {sending ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>ส่งข้อความ</Text>}
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
               <TouchableOpacity style={uiStyles.primaryBtn} onPress={openContact}>
-                <Text style={uiStyles.primaryBtnText}>Contact Seller / Book a Viewing</Text>
+                <Text style={uiStyles.primaryBtnText}>ติดต่อผู้ขาย / นัดดูรถ</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Specifications</Text>
+        <Heading style={styles.sectionTitle} th="ข้อมูลจำเพาะ" en="Specifications" />
         <View style={styles.specGrid}>
           {specs.map(([label, value]) => (
             <View key={label} style={[styles.specCell, isWide && styles.specCellWide]}>
@@ -228,7 +232,7 @@ export default function CarDetailScreen() {
 
         {!!car.description && (
           <>
-            <Text style={styles.sectionTitle}>Description</Text>
+            <Heading style={styles.sectionTitle} th="รายละเอียดเพิ่มเติม" en="Description" />
             <Text style={styles.description}>{car.description}</Text>
           </>
         )}
@@ -277,7 +281,7 @@ const styles = StyleSheet.create({
   stockBadgeText: { color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
 
   sellerBox: { padding: 12, borderRadius: 8, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, marginBottom: 16 },
-  sellerLabel: { fontSize: 11, color: C.muted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  sellerLabel: { fontSize: 12, color: C.muted, fontWeight: '700', marginBottom: 4 },
   sellerName: { fontSize: 15, color: '#fff', fontWeight: '700' },
 
   contactBox: { gap: 10 },

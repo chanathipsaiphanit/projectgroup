@@ -1,5 +1,6 @@
 import { api } from '@/config';
-import { C, formatKm, formatTHB, notify } from '@/lib/cars';
+import { Heading } from '@/components/form-ui';
+import { C, formatKm, formatTHB, notify, resolveImage, thFuel, thTransmission, thType } from '@/lib/cars';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -40,15 +41,26 @@ type CompareResult = {
 };
 
 const PRIORITY_LEVELS = [
-  { label: 'Ignore', value: 0 },
-  { label: 'Normal', value: 1 },
-  { label: 'Important', value: 2 },
+  { label: 'ไม่สนใจ', value: 0 },
+  { label: 'ปกติ', value: 1 },
+  { label: 'สำคัญมาก', value: 2 },
 ];
 
 const LABEL_W = 130;
 const COL_W = 180;
 
 const DEAL_COLOR: Record<string, string> = { 'Good deal': C.green, 'Fair price': C.soft, 'Above market': C.amber };
+const DEAL_TH: Record<string, string> = { 'Good deal': 'ราคาดี คุ้มค่า', 'Fair price': 'ราคาเหมาะสม', 'Above market': 'แพงกว่าราคาตลาด' };
+
+// Thai names for the scoring dimensions (the backend sends English keys)
+const DIM_TH: Record<DimKey, string> = {
+  value: 'ความคุ้มค่า',
+  economy: 'ความประหยัดน้ำมัน',
+  newness: 'ความใหม่ของรถ',
+  lowMileage: 'ไมล์น้อย',
+  space: 'ความจุ / ที่นั่ง',
+  power: 'สมรรถนะ',
+};
 
 export default function CompareScreen() {
   const router = useRouter();
@@ -62,7 +74,7 @@ export default function CompareScreen() {
 
   useEffect(() => {
     if (ids.length < 2) {
-      setError('Pick at least 2 cars to compare');
+      setError('กรุณาเลือกรถอย่างน้อย 2 คันเพื่อเปรียบเทียบ');
       setLoading(false);
       return;
     }
@@ -79,9 +91,9 @@ export default function CompareScreen() {
         if (res.ok) {
           setData(json);
           setError('');
-        } else setError(json.error || 'Comparison failed');
+        } else setError(json.error || 'เปรียบเทียบไม่สำเร็จ');
       })
-      .catch(() => !cancelled && notify('Cannot connect to server'))
+      .catch(() => !cancelled && notify('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -91,25 +103,25 @@ export default function CompareScreen() {
   const nameOf = (id: number) => data?.cars.find((c) => c.id === id)?.name ?? '';
 
   const specRows: [string, (c: CompareCar) => string][] = [
-    ['Price', (c) => formatTHB(c.price)],
-    ['Est. monthly', (c) => `${formatTHB(c.monthly)}/mo`],
-    ['Year', (c) => (c.year ? String(c.year) : '—')],
-    ['Mileage', (c) => formatKm(c.mileage)],
-    ['Type', (c) => c.type || '—'],
-    ['Fuel', (c) => c.fuel || '—'],
-    ['Transmission', (c) => c.transmission || '—'],
-    ['Seats', (c) => (c.seats ? String(c.seats) : '—')],
-    ['Engine', (c) => (c.fuel === 'EV' ? 'Electric' : c.engineCc ? `${c.engineCc.toLocaleString()} cc` : '—')],
-    ['Economy', (c) => (c.fuel === 'EV' ? 'EV' : c.fuelEconomy ? `${c.fuelEconomy} km/l` : '—')],
+    ['ราคา', (c) => formatTHB(c.price)],
+    ['ค่างวดโดยประมาณ', (c) => `${formatTHB(c.monthly)}/เดือน`],
+    ['ปีรถ', (c) => (c.year ? String(c.year) : '—')],
+    ['เลขไมล์', (c) => formatKm(c.mileage)],
+    ['ประเภทรถ', (c) => thType(c.type)],
+    ['เชื้อเพลิง', (c) => thFuel(c.fuel)],
+    ['ระบบเกียร์', (c) => thTransmission(c.transmission)],
+    ['จำนวนที่นั่ง', (c) => (c.seats ? `${c.seats} ที่นั่ง` : '—')],
+    ['เครื่องยนต์', (c) => (c.fuel === 'EV' ? 'มอเตอร์ไฟฟ้า' : c.engineCc ? `${c.engineCc.toLocaleString()} ซีซี` : '—')],
+    ['อัตราสิ้นเปลือง', (c) => (c.fuel === 'EV' ? 'ไฟฟ้า' : c.fuelEconomy ? `${c.fuelEconomy} กม./ลิตร` : '—')],
   ];
 
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
-          <Text style={styles.back}>{'←'} Back</Text>
+          <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>⇄ AI Car Comparison</Text>
+        <Heading style={styles.title} th="⇄ เปรียบเทียบรถด้วย AI" en="AI Car Comparison" />
 
         {error ? (
           <Text style={styles.error}>{error}</Text>
@@ -120,8 +132,8 @@ export default function CompareScreen() {
             {/* Summary */}
             <View style={styles.summaryCard}>
               <View style={styles.summaryHead}>
-                <Text style={styles.summaryTitle}>AI verdict</Text>
-                <Text style={styles.sourceTag}>{data.summarySource === 'claude' ? 'Claude' : 'Scoring model'}</Text>
+                <Heading style={styles.summaryTitle} th="ผลสรุปจาก AI" en="AI Verdict" />
+                <Text style={styles.sourceTag}>{data.summarySource === 'claude' ? 'Claude AI' : 'โมเดลให้คะแนน'}</Text>
               </View>
               <Text style={styles.summaryText}>{data.summary}</Text>
               {loading && <ActivityIndicator color="#fff" style={{ marginTop: 8, alignSelf: 'flex-start' }} />}
@@ -129,13 +141,13 @@ export default function CompareScreen() {
 
             {/* Priorities */}
             <View style={styles.panel}>
-              <Text style={styles.blockTitle}>What matters to you?</Text>
-              <Text style={styles.hint}>Changes how the overall score is weighted.</Text>
+              <Heading style={styles.blockTitle} th="คุณให้ความสำคัญกับอะไร?" en="Your Priorities" />
+              <Text style={styles.hint}>ปรับน้ำหนักของคะแนนรวมตามสิ่งที่คุณสนใจ</Text>
               {data.dimensions.map((d) => {
                 const current = priorities[d.key] ?? 1;
                 return (
                   <View key={d.key} style={styles.priorityRow}>
-                    <Text style={styles.priorityLabel}>{d.label}</Text>
+                    <Text style={styles.priorityLabel}>{DIM_TH[d.key] ?? d.label}</Text>
                     <View style={styles.priorityPills}>
                       {PRIORITY_LEVELS.map((p) => (
                         <TouchableOpacity
@@ -165,10 +177,10 @@ export default function CompareScreen() {
                       onPress={() => router.push({ pathname: '/details', params: { id: String(c.id) } })}
                     >
                       <View style={styles.headImg}>
-                        {c.image ? <Image source={{ uri: c.image }} style={styles.img} /> : <Text style={styles.thumbText}>NOON</Text>}
+                        {c.image ? <Image source={{ uri: resolveImage(c.image) }} style={styles.img} /> : <Text style={styles.thumbText}>NOON</Text>}
                       </View>
                       <Text style={styles.headName} numberOfLines={2}>{c.name}</Text>
-                      {c.id === data.bestOverallId && <Text style={styles.bestTag}>★ BEST OVERALL</Text>}
+                      {c.id === data.bestOverallId && <Text style={styles.bestTag}>★ ดีที่สุดโดยรวม</Text>}
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -182,17 +194,17 @@ export default function CompareScreen() {
                   </View>
                 ))}
 
-                <Text style={styles.groupTitle}>AI scores (0–100)</Text>
+                <Heading style={styles.groupTitle} th="คะแนนจาก AI (0–100)" en="AI Scores" />
                 {data.dimensions.map((d) => (
                   <View key={d.key} style={styles.tr}>
-                    <Text style={[styles.labelCell, styles.labelText, d.weight === 0 && { opacity: 0.4 }]}>{d.label}</Text>
+                    <Text style={[styles.labelCell, styles.labelText, d.weight === 0 && { opacity: 0.4 }]}>{DIM_TH[d.key] ?? d.label}</Text>
                     {data.cars.map((c) => {
                       const s = c.scores[d.key];
                       const win = data.winners[d.key] === c.id;
                       return (
                         <View key={c.id} style={styles.cell}>
                           {s == null ? (
-                            <Text style={styles.cellMuted}>n/a</Text>
+                            <Text style={styles.cellMuted}>ไม่มีข้อมูล</Text>
                           ) : (
                             <>
                               <Text style={[styles.cellText, win && styles.winText]}>{win ? '★ ' : ''}{s}</Text>
@@ -208,7 +220,7 @@ export default function CompareScreen() {
                 ))}
 
                 <View style={[styles.tr, styles.overallRow]}>
-                  <Text style={[styles.labelCell, styles.labelText, { color: '#fff' }]}>Overall</Text>
+                  <Text style={[styles.labelCell, styles.labelText, { color: '#fff' }]}>คะแนนรวม</Text>
                   {data.cars.map((c) => (
                     <Text key={c.id} style={[styles.cell, styles.overallText, c.id === data.bestOverallId && { color: C.red }]}>
                       {c.overall ?? '—'}
@@ -218,16 +230,15 @@ export default function CompareScreen() {
 
                 {data.priceModel?.used && (
                   <>
-                    <Text style={styles.groupTitle}>Market price (ML model)</Text>
+                    <Heading style={styles.groupTitle} th="ราคาตลาด (โมเดล ML)" en="Market Price" />
                     <View style={styles.tr}>
-                      <Text style={[styles.labelCell, styles.labelText]}>Est. fair price</Text>
+                      <Text style={[styles.labelCell, styles.labelText]}>ราคาที่เหมาะสม</Text>
                       {data.cars.map((c) => (
                         <View key={c.id} style={styles.cell}>
                           <Text style={styles.cellText}>{formatTHB(c.fairPrice)}</Text>
                           {c.dealLabel && (
                             <Text style={[styles.dealText, { color: DEAL_COLOR[c.dealLabel] }]}>
-                              {c.dealLabel}
-                              {c.dealPct ? ` (${c.dealPct > 0 ? '-' : '+'}${Math.abs(c.dealPct)}%)` : ''}
+                              {`${DEAL_TH[c.dealLabel] ?? c.dealLabel}${c.dealPct ? ` (${c.dealPct > 0 ? '-' : '+'}${Math.abs(c.dealPct)}%)` : ''}`}
                             </Text>
                           )}
                         </View>
@@ -241,22 +252,23 @@ export default function CompareScreen() {
             {/* Similarity */}
             {data.similarity.length > 0 && (
               <View style={[styles.panel, { marginTop: 16 }]}>
-                <Text style={styles.blockTitle}>How similar are they?</Text>
+                <Heading style={styles.blockTitle} th="รถแต่ละคันคล้ายกันแค่ไหน?" en="Similarity" />
                 {data.similarity.map((s) => (
                   <View key={`${s.a}-${s.b}`} style={styles.simRow}>
-                    <Text style={styles.simNames} numberOfLines={1}>{nameOf(s.a)} ↔ {nameOf(s.b)}</Text>
+                    <Text style={styles.simNames} numberOfLines={1}>{`${nameOf(s.a)} ↔ ${nameOf(s.b)}`}</Text>
                     <Text style={styles.simPct}>{s.percent}%</Text>
                   </View>
                 ))}
-                <Text style={styles.hint}>High similarity means they compete for the same buyer — pick on price and condition.</Text>
+                <Text style={styles.hint}>ถ้าคล้ายกันมาก แปลว่าเป็นรถกลุ่มเดียวกัน ให้ตัดสินใจจากราคาและสภาพรถ</Text>
               </View>
             )}
 
             <Text style={styles.footnote}>
-              Scores are relative to all cars in our inventory.
-              {data.priceModel
-                ? ` Fair price comes from a regression model trained on ${data.priceModel.samples} cars (R² ${data.priceModel.r2})${data.priceModel.used ? '' : ' — too inaccurate to use yet'}.`
-                : ' Add year and mileage to more cars to enable fair-price estimates.'}
+              {`คะแนนเทียบกับรถทุกคันในสต็อก${
+                data.priceModel
+                  ? ` · ราคาที่เหมาะสมมาจากโมเดล Regression ที่เรียนรู้จากรถ ${data.priceModel.samples} คัน (R² ${data.priceModel.r2})${data.priceModel.used ? '' : ' — ยังแม่นไม่พอจะนำมาใช้'}`
+                  : ' · เพิ่มปีรถและเลขไมล์ให้รถหลายคันขึ้น เพื่อเปิดใช้การประเมินราคาตลาด'
+              }`}
             </Text>
           </>
         )}

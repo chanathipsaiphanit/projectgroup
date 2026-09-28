@@ -12,9 +12,9 @@ export default function AddCarScreen() {
   if (!canSell(user)) {
     return (
       <View style={styles.center}>
-        <Text style={styles.msg}>Only seller accounts can list cars for sale.</Text>
+        <Text style={styles.msg}>ลงขายรถได้เฉพาะบัญชีผู้ขายเท่านั้น</Text>
         <TouchableOpacity onPress={() => router.replace(user ? '/' : '/login')}>
-          <Text style={styles.link}>{user ? 'Back to cars' : 'Sign in'}</Text>
+          <Text style={styles.link}>{user ? 'กลับไปหน้ารถทั้งหมด' : 'เข้าสู่ระบบ'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -27,12 +27,12 @@ export default function AddCarScreen() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to add car');
-    notify('Car listed successfully!');
+    if (!res.ok) throw new Error(data.error || 'ลงขายรถไม่สำเร็จ');
+    notify('ลงขายรถเรียบร้อยแล้ว!');
     router.back();
   };
 
-  return <CarForm title="List a Car for Sale" submitLabel="Save Car" onSubmit={submit} onCancel={() => router.back()} />;
+  return <CarForm title="ลงขายรถ" titleEn="Sell a Car" submitLabel="บันทึกและลงขาย" onSubmit={submit} onCancel={() => router.back()} />;
 }
 
 const styles = StyleSheet.create({

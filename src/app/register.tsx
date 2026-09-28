@@ -14,8 +14,8 @@ import {
 } from 'react-native';
 
 const ACCOUNT_TYPES = [
-  { role: 'user', title: 'Buyer', desc: 'Browse, compare and contact sellers' },
-  { role: 'seller', title: 'Seller', desc: 'List your cars for sale' },
+  { role: 'user', title: 'ผู้ซื้อ (Buyer)', desc: 'ดูรถ เปรียบเทียบ และติดต่อผู้ขาย' },
+  { role: 'seller', title: 'ผู้ขาย (Seller)', desc: 'ลงขายรถมือสองของคุณ' },
 ] as const;
 
 export default function RegisterScreen() {
@@ -31,11 +31,11 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!username.trim() || !email.trim() || !password || !confirmPassword) {
-      alert('Please fill in all fields');
+      alert('กรุณากรอกข้อมูลให้ครบทุกช่อง');
       return;
     }
     if (password !== confirmPassword) {
-      alert('Passwords do not match');
+      alert('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
       return;
     }
 
@@ -50,17 +50,17 @@ export default function RegisterScreen() {
 
       if (response.ok) {
         if (Platform.OS === 'web') {
-          window.alert('Registration successful! Please sign in.');
+          window.alert('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ');
         } else {
-          alert('Registration successful! Please sign in.');
+          alert('สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ');
         }
         router.replace('/login');
       } else {
-        alert(data.error || 'Registration failed');
+        alert(data.error || 'สมัครสมาชิกไม่สำเร็จ');
       }
     } catch (err) {
       console.error(err);
-      alert('Cannot connect to server');
+      alert('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     } finally {
       setLoading(false);
     }
@@ -74,9 +74,9 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.brandTitle}>Noon Home Car</Text>
         <View style={styles.brandAccent} />
-        <Text style={styles.subtitle}>Create a new account</Text>
+        <Text style={styles.subtitle}>สมัครสมาชิกใหม่ (Sign Up)</Text>
 
-        <Text style={styles.label}>I want to…</Text>
+        <Text style={styles.label}>ฉันต้องการเป็น…</Text>
         <View style={styles.roleRow}>
           {ACCOUNT_TYPES.map((t) => {
             const active = role === t.role;
@@ -96,7 +96,7 @@ export default function RegisterScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Username"
+          placeholder="ชื่อผู้ใช้"
           placeholderTextColor="#888"
           value={username}
           onChangeText={setUsername}
@@ -105,7 +105,7 @@ export default function RegisterScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder="อีเมล"
           placeholderTextColor="#888"
           value={email}
           onChangeText={setEmail}
@@ -115,7 +115,7 @@ export default function RegisterScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Password"
+          placeholder="รหัสผ่าน"
           placeholderTextColor="#888"
           secureTextEntry
           value={password}
@@ -124,7 +124,7 @@ export default function RegisterScreen() {
         />
         <TextInput
           style={styles.input}
-          placeholder="Confirm Password"
+          placeholder="ยืนยันรหัสผ่าน"
           placeholderTextColor="#888"
           secureTextEntry
           value={confirmPassword}
@@ -136,12 +136,12 @@ export default function RegisterScreen() {
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.registerBtnText}>Sign Up as {role === 'seller' ? 'Seller' : 'Buyer'}</Text>
+            <Text style={styles.registerBtnText}>{`สมัครเป็น${role === 'seller' ? 'ผู้ขาย' : 'ผู้ซื้อ'}`}</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/login')}>
-          <Text style={styles.backText}>Already have an account? Sign In</Text>
+          <Text style={styles.backText}>มีบัญชีอยู่แล้ว? เข้าสู่ระบบ</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

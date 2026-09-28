@@ -1,5 +1,15 @@
 import { C } from '@/lib/cars';
-import { StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from 'react-native';
+import { StyleProp, StyleSheet, Text, TextInput, TextInputProps, TextStyle, TouchableOpacity, View } from 'react-native';
+
+// Heading in Thai with a smaller English caption after it
+export function Heading({ th, en, style }: { th: string; en: string; style?: StyleProp<TextStyle> }) {
+  return (
+    <Text style={style}>
+      {th}
+      <Text style={styles.headingEn}>{`  ${en}`}</Text>
+    </Text>
+  );
+}
 
 // Selectable chip used by forms, filters and the AI screens
 export function Pill({
@@ -63,6 +73,7 @@ export const uiStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  headingEn: { fontSize: 12, fontWeight: '600', color: C.muted, letterSpacing: 0.3 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: C.input },
   pillSmall: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },

@@ -1,4 +1,4 @@
-import { Field, uiStyles } from '@/components/form-ui';
+import { Field, Heading, uiStyles } from '@/components/form-ui';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import { authHeaders, C, formatTHB, notify } from '@/lib/cars';
@@ -39,6 +39,8 @@ type Conversation = {
 
 const POLL_MS = 5000;
 
+const STATUS_TH: Record<string, string> = { pending: 'รอตอบรับ', accepted: 'ยืนยันแล้ว', declined: 'ปฏิเสธ', cancelled: 'ยกเลิกแล้ว' };
+
 const STATUS_COLOR: Record<Appointment['status'], string> = {
   pending: C.amber,
   accepted: C.green,
@@ -78,10 +80,10 @@ export default function ChatScreen() {
         setAppointments(data.appointments);
         setError('');
       } else {
-        setError(data.error || 'Could not load conversation');
+        setError(data.error || 'โหลดแชทไม่สำเร็จ');
       }
     } catch {
-      setError('Cannot connect to server');
+      setError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
     }
   }, [id, user]);
 
@@ -101,9 +103,9 @@ export default function ChatScreen() {
   if (!user) {
     return (
       <SafeAreaView style={[styles.screen, styles.center]}>
-        <Text style={styles.muted}>Sign in to view this conversation.</Text>
+        <Text style={styles.muted}>กรุณาเข้าสู่ระบบเพื่อดูแชทนี้</Text>
         <TouchableOpacity onPress={() => router.replace('/login')}>
-          <Text style={styles.link}>Sign in</Text>
+          <Text style={styles.link}>เข้าสู่ระบบ</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -116,7 +118,7 @@ export default function ChatScreen() {
   const post = async (path: string, body: object, method = 'POST') => {
     const res = await fetch(api(path), { method, headers: authHeaders(user.token), body: JSON.stringify(body) });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    if (!res.ok) throw new Error(data.error || 'ทำรายการไม่สำเร็จ');
     return data;
   };
 
@@ -169,15 +171,15 @@ export default function ChatScreen() {
               disabled={!conv}
               onPress={() => conv && router.push({ pathname: '/details', params: { id: String(conv.car_id) } })}
             >
-              <Text style={styles.headerTitle} numberOfLines={1}>{conv?.car_name || 'Conversation'}</Text>
+              <Text style={styles.headerTitle} numberOfLines={1}>{conv?.car_name || 'แชท'}</Text>
               {conv && (
                 <Text style={styles.headerSub} numberOfLines={1}>
-                  with {otherName} ({iAmBuyer ? 'seller' : 'buyer'}) · {formatTHB(Number(conv.car_price))}
+                  {`คุยกับ ${otherName} (${iAmBuyer ? 'ผู้ขาย' : 'ผู้ซื้อ'}) · ${formatTHB(Number(conv.car_price))}`}
                 </Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.apptBtn} onPress={() => setApptOpen((v) => !v)}>
-              <Text style={styles.apptBtnText}>{apptOpen ? 'Close' : '📅 Meet'}</Text>
+              <Text style={styles.apptBtnText}>{apptOpen ? 'ปิด' : '📅 นัดดูรถ'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -187,15 +189,15 @@ export default function ChatScreen() {
             {/* Propose-a-meeting form */}
             {apptOpen && (
               <View style={styles.apptForm}>
-                <Text style={styles.apptFormTitle}>Propose a viewing / test drive</Text>
+                <Heading style={styles.apptFormTitle} th="นัดดูรถ / ทดลองขับ" en="Book a Viewing" />
                 <View style={styles.formRow}>
-                  <Field label="Date (YYYY-MM-DD)" value={appt.date} onChangeText={(v) => setAppt({ ...appt, date: v })} />
-                  <Field label="Time (HH:MM)" value={appt.time} onChangeText={(v) => setAppt({ ...appt, time: v })} />
+                  <Field label="วันที่ (ปี ค.ศ.-เดือน-วัน เช่น 2026-10-05)" value={appt.date} onChangeText={(v) => setAppt({ ...appt, date: v })} />
+                  <Field label="เวลา (ชม.:นาที เช่น 10:00)" value={appt.time} onChangeText={(v) => setAppt({ ...appt, time: v })} />
                 </View>
-                <Field label="Location" placeholder="e.g. Noon Home Car showroom" value={appt.location} onChangeText={(v) => setAppt({ ...appt, location: v })} />
-                <Field label="Note (optional)" placeholder="e.g. I'd like a test drive" value={appt.note} onChangeText={(v) => setAppt({ ...appt, note: v })} />
+                <Field label="สถานที่นัด" placeholder="เช่น โชว์รูม Noon Home Car" value={appt.location} onChangeText={(v) => setAppt({ ...appt, location: v })} />
+                <Field label="หมายเหตุ (ไม่บังคับ)" placeholder="เช่น ขอทดลองขับด้วย" value={appt.note} onChangeText={(v) => setAppt({ ...appt, note: v })} />
                 <TouchableOpacity style={uiStyles.primaryBtn} onPress={proposeAppointment}>
-                  <Text style={uiStyles.primaryBtnText}>Send proposal</Text>
+                  <Text style={uiStyles.primaryBtnText}>ส่งคำขอนัด</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -207,26 +209,26 @@ export default function ChatScreen() {
                 <View key={a.id} style={[styles.apptCard, { borderLeftColor: STATUS_COLOR[a.status] }]}>
                   <View style={styles.apptTop}>
                     <Text style={styles.apptWhen}>📅 {a.appointment_at}</Text>
-                    <Text style={[styles.apptStatus, { color: STATUS_COLOR[a.status] }]}>{a.status.toUpperCase()}</Text>
+                    <Text style={[styles.apptStatus, { color: STATUS_COLOR[a.status] }]}>{STATUS_TH[a.status] ?? a.status}</Text>
                   </View>
                   <Text style={styles.apptWhere}>{a.location}</Text>
                   {!!a.note && <Text style={styles.apptNote}>{a.note}</Text>}
-                  <Text style={styles.apptBy}>Proposed by {mine ? 'you' : otherName}</Text>
+                  <Text style={styles.apptBy}>{`เสนอนัดโดย ${mine ? 'คุณ' : otherName}`}</Text>
 
                   <View style={styles.apptActions}>
                     {!mine && a.status === 'pending' && (
                       <>
                         <TouchableOpacity style={[styles.smallBtn, { backgroundColor: C.green }]} onPress={() => updateAppointment(a.id, 'accepted')}>
-                          <Text style={styles.smallBtnText}>Accept</Text>
+                          <Text style={styles.smallBtnText}>ตอบรับ</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.smallBtn, styles.smallBtnOutline]} onPress={() => updateAppointment(a.id, 'declined')}>
-                          <Text style={styles.smallBtnText}>Decline</Text>
+                          <Text style={styles.smallBtnText}>ปฏิเสธ</Text>
                         </TouchableOpacity>
                       </>
                     )}
                     {mine && (a.status === 'pending' || a.status === 'accepted') && (
                       <TouchableOpacity style={[styles.smallBtn, styles.smallBtnOutline]} onPress={() => updateAppointment(a.id, 'cancelled')}>
-                        <Text style={styles.smallBtnText}>Cancel</Text>
+                        <Text style={styles.smallBtnText}>ยกเลิกนัด</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -238,7 +240,7 @@ export default function ChatScreen() {
             {!conv && !error ? (
               <ActivityIndicator color={C.red} style={{ marginTop: 40 }} />
             ) : messages.length === 0 ? (
-              <Text style={styles.emptyText}>No messages yet — say hello!</Text>
+              <Text style={styles.emptyText}>ยังไม่มีข้อความ — ทักทายผู้ขายได้เลย!</Text>
             ) : (
               messages.map((m) => {
                 const mine = Number(m.sender_id) === me;
@@ -246,7 +248,7 @@ export default function ChatScreen() {
                   <View key={m.id} style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
                     <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
                       <Text style={styles.bubbleText}>{m.body}</Text>
-                      <Text style={styles.bubbleTime}>{new Date(m.created_at).toLocaleString()}</Text>
+                      <Text style={styles.bubbleTime}>{new Date(m.created_at).toLocaleString('th-TH')}</Text>
                     </View>
                   </View>
                 );
@@ -258,7 +260,7 @@ export default function ChatScreen() {
           <View style={styles.composer}>
             <TextInput
               style={styles.composerInput}
-              placeholder="Type a message…"
+              placeholder="พิมพ์ข้อความ…"
               placeholderTextColor="#666"
               value={text}
               onChangeText={setText}
@@ -266,7 +268,7 @@ export default function ChatScreen() {
               returnKeyType="send"
             />
             <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !text.trim()}>
-              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendText}>Send</Text>}
+              {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendText}>ส่ง</Text>}
             </TouchableOpacity>
           </View>
         </View>
