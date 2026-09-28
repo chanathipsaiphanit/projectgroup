@@ -121,7 +121,7 @@ export default function CompareScreen() {
         <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
-        <Heading style={styles.title} th="⇄ เปรียบเทียบรถด้วย AI" en="AI Car Comparison" />
+        <Heading style={styles.title} th="⇄ เปรียบเทียบรถ" en="Compare Cars" />
 
         {error ? (
           <Text style={styles.error}>{error}</Text>
@@ -132,8 +132,7 @@ export default function CompareScreen() {
             {/* Summary */}
             <View style={styles.summaryCard}>
               <View style={styles.summaryHead}>
-                <Heading style={styles.summaryTitle} th="ผลสรุปจาก AI" en="AI Verdict" />
-                <Text style={styles.sourceTag}>{data.summarySource === 'claude' ? 'Claude AI' : 'โมเดลให้คะแนน'}</Text>
+                <Heading style={styles.summaryTitle} th="สรุปผลการเปรียบเทียบ" en="Summary" />
               </View>
               <Text style={styles.summaryText}>{data.summary}</Text>
               {loading && <ActivityIndicator color="#fff" style={{ marginTop: 8, alignSelf: 'flex-start' }} />}
@@ -194,7 +193,7 @@ export default function CompareScreen() {
                   </View>
                 ))}
 
-                <Heading style={styles.groupTitle} th="คะแนนจาก AI (0–100)" en="AI Scores" />
+                <Heading style={styles.groupTitle} th="คะแนนแต่ละด้าน (0–100)" en="Scores" />
                 {data.dimensions.map((d) => (
                   <View key={d.key} style={styles.tr}>
                     <Text style={[styles.labelCell, styles.labelText, d.weight === 0 && { opacity: 0.4 }]}>{DIM_TH[d.key] ?? d.label}</Text>
@@ -230,7 +229,7 @@ export default function CompareScreen() {
 
                 {data.priceModel?.used && (
                   <>
-                    <Heading style={styles.groupTitle} th="ราคาตลาด (โมเดล ML)" en="Market Price" />
+                    <Heading style={styles.groupTitle} th="ราคาตลาดโดยประมาณ" en="Market Price" />
                     <View style={styles.tr}>
                       <Text style={[styles.labelCell, styles.labelText]}>ราคาที่เหมาะสม</Text>
                       {data.cars.map((c) => (
@@ -266,7 +265,7 @@ export default function CompareScreen() {
             <Text style={styles.footnote}>
               {`คะแนนเทียบกับรถทุกคันในสต็อก${
                 data.priceModel
-                  ? ` · ราคาที่เหมาะสมมาจากโมเดล Regression ที่เรียนรู้จากรถ ${data.priceModel.samples} คัน (R² ${data.priceModel.r2})${data.priceModel.used ? '' : ' — ยังแม่นไม่พอจะนำมาใช้'}`
+                  ? ` · ราคาตลาดประเมินจากรถ ${data.priceModel.samples} คันในระบบ${data.priceModel.used ? '' : ' (ข้อมูลยังไม่พอจะประเมินราคา)'}`
                   : ' · เพิ่มปีรถและเลขไมล์ให้รถหลายคันขึ้น เพื่อเปิดใช้การประเมินราคาตลาด'
               }`}
             </Text>
@@ -288,7 +287,6 @@ const styles = StyleSheet.create({
   summaryCard: { padding: 16, borderRadius: 10, backgroundColor: '#1F0A0C', borderWidth: 1, borderColor: C.red, marginBottom: 16 },
   summaryHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   summaryTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
-  sourceTag: { color: C.soft, fontSize: 11, fontWeight: '700', borderWidth: 1, borderColor: '#444', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   summaryText: { color: '#fff', fontSize: 14, lineHeight: 21 },
 
   panel: { padding: 16, borderRadius: 10, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, marginBottom: 16 },

@@ -29,7 +29,8 @@ export default function AddCarScreen() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'ลงขายรถไม่สำเร็จ');
     notify('ลงขายรถเรียบร้อยแล้ว!');
-    router.back();
+    // Show the seller their listings so they can see the car they just posted
+    router.replace('/my-cars');
   };
 
   return <CarForm title="ลงขายรถ" titleEn="Sell a Car" submitLabel="บันทึกและลงขาย" onSubmit={submit} onCancel={() => router.back()} />;
