@@ -1,4 +1,4 @@
-import { Pill } from '@/components/form-ui';
+import { Heading, Pill } from '@/components/form-ui';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import {
@@ -12,6 +12,9 @@ import {
   FUELS,
   normalizeCar,
   notify,
+  thFuel,
+  thTransmission,
+  thType,
   TRANSMISSIONS,
 } from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -280,7 +283,9 @@ export default function HomeScreen() {
     ? `ผลการค้นหา "${searchQuery}"`
     : filters.onlyMine
     ? 'รถที่ฉันลงขาย'
-    : [filters.brand !== 'All' ? filters.brand : '', activeType !== 'All' ? activeType : ''].filter(Boolean).join(' · ') || 'รถทั้งหมด';
+    : [filters.brand !== 'All' ? filters.brand : '', activeType !== 'All' ? thType(activeType) : ''].filter(Boolean).join(' · ') ||
+      'รถมือสองทั้งหมด';
+  const sectionTitleEn = searchQuery ? 'Search Results' : filters.onlyMine ? 'My Listings' : 'Used Cars';
 
   // ---------- Feature shortcuts ----------
   const goSell = () => {
@@ -315,11 +320,11 @@ export default function HomeScreen() {
   };
 
   const FEATURES = [
-    { key: 'sell', icon: '＋', title: 'ลงขายรถ', desc: 'สำหรับผู้ขาย', onPress: goSell },
-    { key: 'filter', icon: '☰', title: 'กรองรถ', desc: 'ยี่ห้อ ราคา ปี ไมล์', onPress: () => setFiltersOpen((v) => !v) },
-    { key: 'chat', icon: '✉', title: 'ติดต่อผู้ขาย', desc: 'แชท / นัดดูรถ', onPress: goMessages },
-    { key: 'ai', icon: '✦', title: 'AI แนะนำรถ', desc: 'ตามงบและการใช้งาน', onPress: () => router.push('/ai-advisor') },
-    { key: 'compare', icon: '⇄', title: 'เปรียบเทียบรถ', desc: 'AI/ML 2–4 คัน', onPress: startCompare },
+    { key: 'sell', icon: '＋', title: 'ลงขายรถ', en: 'Sell a Car', desc: 'สำหรับผู้ขาย', onPress: goSell },
+    { key: 'filter', icon: '☰', title: 'กรองรถ', en: 'Filters', desc: 'ยี่ห้อ ราคา ปี ไมล์', onPress: () => setFiltersOpen((v) => !v) },
+    { key: 'chat', icon: '✉', title: 'ติดต่อผู้ขาย', en: 'Contact', desc: 'แชท / นัดดูรถ', onPress: goMessages },
+    { key: 'ai', icon: '✦', title: 'AI แนะนำรถ', en: 'AI Advisor', desc: 'ตามงบและการใช้งาน', onPress: () => router.push('/ai-advisor') },
+    { key: 'compare', icon: '⇄', title: 'เปรียบเทียบรถ', en: 'Compare', desc: 'AI/ML 2–4 คัน', onPress: startCompare },
   ];
 
   const handleLogout = () => {
@@ -338,16 +343,16 @@ export default function HomeScreen() {
       if (res.ok && data.success) {
         fetchCars();
       } else {
-        notify(data.error || 'Failed to delete car');
+        notify(data.error || 'ลบรถไม่สำเร็จ');
       }
     } catch (err) {
       console.error(err);
-      notify('Unable to delete car');
+      notify('ไม่สามารถลบรถได้');
     }
   };
 
   const handleDeletePress = (id: number | string, name: string) =>
-    confirmAction('Delete car', `Are you sure you want to delete "${name}"?`, () => doDelete(id));
+    confirmAction('ลบรถ', `ต้องการลบ "${name}" ใช่ไหม?`, () => doDelete(id), 'ลบ');
 
   const openDetail = (item: Car) => {
     router.push({ pathname: '/details', params: { car: JSON.stringify(item) } });
@@ -401,7 +406,10 @@ export default function HomeScreen() {
         <View style={styles.pageInner}>
           {/* Top bar: brand + account actions */}
           <View style={styles.topBar}>
-            <Text style={styles.brandTitle}>Noon Home Car</Text>
+            <View>
+              <Text style={styles.brandTitle}>Noon Home Car</Text>
+              <Text style={styles.brandTagline}>ตลาดรถมือสองคุณภาพ · Used Car Marketplace</Text>
+            </View>
 
             <View style={styles.topBarActions}>
               <TouchableOpacity style={styles.searchPill} onPress={openSearch}>
@@ -440,7 +448,7 @@ export default function HomeScreen() {
                   style={({ hovered }: any) => [styles.featureCard, (active || hovered) && styles.featureCardActive]}
                 >
                   <Text style={styles.featureIcon}>{f.icon}</Text>
-                  <Text style={styles.featureTitle}>{f.title}</Text>
+                  <Heading style={styles.featureTitle} th={f.title} en={f.en} />
                   <Text style={styles.featureDesc}>{f.desc}</Text>
                 </Pressable>
               );
@@ -474,7 +482,7 @@ export default function HomeScreen() {
                   style={[styles.tierTabPill, active && styles.tierTabPillActive]}
                   onPress={() => setActiveType(t)}
                 >
-                  <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>{t === 'All' ? 'ทุกประเภท' : t}</Text>
+                  <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>{t === 'All' ? 'ทุกประเภท' : thType(t)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -539,14 +547,14 @@ export default function HomeScreen() {
               <Text style={styles.filterLabel}>เชื้อเพลิง</Text>
               <View style={styles.filterPills}>
                 {['All', ...FUELS].map((f) => (
-                  <Pill key={f} small label={f === 'All' ? 'ทั้งหมด' : f} active={filters.fuel === f} onPress={() => setFilter('fuel', f)} />
+                  <Pill key={f} small label={f === 'All' ? 'ทั้งหมด' : thFuel(f)} active={filters.fuel === f} onPress={() => setFilter('fuel', f)} />
                 ))}
               </View>
 
               <Text style={styles.filterLabel}>เกียร์</Text>
               <View style={styles.filterPills}>
                 {['All', ...TRANSMISSIONS].map((t) => (
-                  <Pill key={t} small label={t === 'All' ? 'ทั้งหมด' : t} active={filters.transmission === t} onPress={() => setFilter('transmission', t)} />
+                  <Pill key={t} small label={t === 'All' ? 'ทั้งหมด' : thTransmission(t)} active={filters.transmission === t} onPress={() => setFilter('transmission', t)} />
                 ))}
               </View>
 
@@ -577,7 +585,7 @@ export default function HomeScreen() {
           {/* Section header with compare toggle + prev/next arrows */}
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+              <Heading style={styles.sectionTitle} th={sectionTitle} en={sectionTitleEn} />
               <Text style={styles.countText}>{`${filteredCars.length} คัน`}</Text>
             </View>
             <View style={styles.arrowRow}>
@@ -618,7 +626,7 @@ export default function HomeScreen() {
                 const isLow = item.stock < 2;
                 const tier = tierById.get(item.id);
                 const selected = compareIds.includes(item.id);
-                const subtitle = [item.year, item.model || item.type, item.mileage != null ? `${item.mileage.toLocaleString()} km` : null]
+                const subtitle = [item.year ? `ปี ${item.year}` : null, item.model || thType(item.type), item.mileage != null ? `${item.mileage.toLocaleString()} กม.` : null]
                   .filter(Boolean)
                   .join(' · ');
                 return (
@@ -767,7 +775,7 @@ export default function HomeScreen() {
                       applySearch('');
                     }}
                   >
-                    <Text style={styles.popularTagText}>{t}</Text>
+                    <Text style={styles.popularTagText}>{thType(t)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -788,6 +796,7 @@ const styles = StyleSheet.create({
 
   topBar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   brandTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 1 },
+  brandTagline: { fontSize: 12, color: C.red, fontWeight: '700', marginTop: 2 },
   welcomeText: { fontSize: 12, color: C.muted, marginTop: 6, marginBottom: 4 },
 
   topBarActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
@@ -910,7 +919,7 @@ const styles = StyleSheet.create({
 
   // Price-tier badge on each card — red intensity (muted → solid) marks
   // Low/Mid/High. Sits opposite the low-stock tag so they never collide.
-  tierBadge: { position: 'absolute', right: 0, top: 0, paddingHorizontal: 8, paddingVertical: 4, borderBottomLeftRadius: 6 },
+  tierBadge: { position: 'absolute', right: 0, bottom: 0, paddingHorizontal: 8, paddingVertical: 4, borderTopLeftRadius: 6 },
   tierBadgeLow: { backgroundColor: '#2A2A2A' },
   tierBadgeMid: { backgroundColor: C.redDim },
   tierBadgeHigh: { backgroundColor: C.red },

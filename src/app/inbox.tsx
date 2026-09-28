@@ -1,6 +1,7 @@
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
-import { authHeaders, C, formatTHB } from '@/lib/cars';
+import { Heading } from '@/components/form-ui';
+import { authHeaders, C, formatTHB, resolveImage } from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -37,9 +38,9 @@ export default function InboxScreen() {
           if (res.ok) {
             setRows(data);
             setError('');
-          } else setError(data.error || 'Could not load messages');
+          } else setError(data.error || 'โหลดข้อความไม่สำเร็จ');
         })
-        .catch(() => setError('Cannot connect to server'))
+        .catch(() => setError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'))
         .finally(() => setLoading(false));
     }, [user])
   );
@@ -47,9 +48,9 @@ export default function InboxScreen() {
   if (!user) {
     return (
       <SafeAreaView style={[styles.screen, styles.center]}>
-        <Text style={styles.muted}>Sign in to see your messages.</Text>
+        <Text style={styles.muted}>กรุณาเข้าสู่ระบบเพื่อดูข้อความ</Text>
         <TouchableOpacity onPress={() => router.replace('/login')}>
-          <Text style={styles.link}>Sign in</Text>
+          <Text style={styles.link}>เข้าสู่ระบบ</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
@@ -59,17 +60,17 @@ export default function InboxScreen() {
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page}>
         <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
-          <Text style={styles.back}>{'←'} Back</Text>
+          <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Messages</Text>
-        <Text style={styles.subtitle}>Chats and viewing appointments with {user.role === 'user' ? 'sellers' : 'buyers and sellers'}</Text>
+        <Heading style={styles.title} th="ข้อความและนัดหมาย" en="Messages" />
+        <Text style={styles.subtitle}>{`แชทและนัดดูรถกับ${user.role === 'user' ? 'ผู้ขาย' : 'ผู้ซื้อและผู้ขาย'}`}</Text>
 
         {loading ? (
           <ActivityIndicator color={C.red} style={{ marginTop: 40 }} />
         ) : error ? (
           <Text style={styles.empty}>{error}</Text>
         ) : rows.length === 0 ? (
-          <Text style={styles.empty}>No conversations yet. Open a car and tap “Contact Seller”.</Text>
+          <Text style={styles.empty}>ยังไม่มีแชท เปิดดูรถที่สนใจแล้วกด “ติดต่อผู้ขาย / นัดดูรถ”</Text>
         ) : (
           rows.map((c) => {
             const iAmBuyer = Number(c.buyer_id) === Number(user.id);
@@ -82,7 +83,7 @@ export default function InboxScreen() {
               >
                 <View style={styles.thumb}>
                   {c.car_image ? (
-                    <Image source={{ uri: c.car_image }} style={styles.thumbImg} />
+                    <Image source={{ uri: resolveImage(c.car_image) }} style={styles.thumbImg} />
                   ) : (
                     <Text style={styles.thumbText}>NOON</Text>
                   )}
@@ -90,13 +91,13 @@ export default function InboxScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.carName} numberOfLines={1}>{c.car_name}</Text>
                   <Text style={styles.meta} numberOfLines={1}>
-                    {iAmBuyer ? 'Seller' : 'Buyer'}: {other} · {formatTHB(Number(c.car_price))}
+                    {`${iAmBuyer ? 'ผู้ขาย' : 'ผู้ซื้อ'}: ${other} · ${formatTHB(Number(c.car_price))}`}
                   </Text>
-                  <Text style={styles.last} numberOfLines={1}>{c.last_message || 'No messages yet'}</Text>
+                  <Text style={styles.last} numberOfLines={1}>{c.last_message || 'ยังไม่มีข้อความ'}</Text>
                 </View>
                 {Number(c.pending_appointments) > 0 && (
                   <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{c.pending_appointments} pending</Text>
+                    <Text style={styles.badgeText}>{`รอตอบนัด ${c.pending_appointments}`}</Text>
                   </View>
                 )}
               </TouchableOpacity>

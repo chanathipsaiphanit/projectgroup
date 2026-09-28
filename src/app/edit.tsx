@@ -18,10 +18,10 @@ export default function EditCarScreen() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to update car');
-    notify('Car updated successfully!');
+    if (!res.ok) throw new Error(data.error || 'แก้ไขข้อมูลรถไม่สำเร็จ');
+    notify('แก้ไขข้อมูลรถเรียบร้อยแล้ว!');
     router.back();
   };
 
-  return <CarForm title="Edit Car" submitLabel="Update Car" initial={car} onSubmit={submit} onCancel={() => router.back()} />;
+  return <CarForm title="แก้ไขข้อมูลรถ" titleEn="Edit Car" submitLabel="บันทึกการแก้ไข" initial={car} onSubmit={submit} onCancel={() => router.back()} />;
 }

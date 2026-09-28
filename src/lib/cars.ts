@@ -1,3 +1,4 @@
+import { api } from '@/config';
 import { Alert, Platform } from 'react-native';
 
 export const CAR_TYPES = ['Sedan', 'SUV', 'Sports Car', 'Hatchback', 'Pickup'];
@@ -10,6 +11,10 @@ const toNum = (v: any): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+// Paths like /cars/x.jpg are photos served by our backend
+export const resolveImage = (image?: string | null) =>
+  typeof image === 'string' && image.startsWith('/') ? api(image) : image ?? '';
+
 // The DB returns snake_case MySQL columns; screens pass cars around in
 // camelCase. This accepts either, so it's safe to call twice.
 export function normalizeCar(item: any) {
@@ -19,7 +24,7 @@ export function normalizeCar(item: any) {
     model: item.model ?? '',
     type: item.type ?? '',
     stock: Number(item.stock ?? 0),
-    image: item.image ?? '',
+    image: resolveImage(item.image),
     price: Number(item.price ?? 0),
     year: toNum(item.year),
     mileage: toNum(item.mileage),
@@ -38,9 +43,44 @@ export function normalizeCar(item: any) {
 export type Car = ReturnType<typeof normalizeCar>;
 
 export const formatTHB = (v: number | null | undefined) =>
-  v == null ? '—' : `${Math.round(v).toLocaleString()} THB`;
+  v == null ? '—' : `${Math.round(v).toLocaleString()} บาท`;
 
-export const formatKm = (v: number | null | undefined) => (v == null ? '—' : `${v.toLocaleString()} km`);
+export const formatKm = (v: number | null | undefined) => (v == null ? '—' : `${v.toLocaleString()} กม.`);
+
+// The database keeps English values (the AI engine relies on them);
+// these turn them into Thai for display only.
+const TYPE_TH: Record<string, string> = {
+  Sedan: 'รถเก๋ง',
+  SUV: 'รถอเนกประสงค์ (SUV)',
+  'Sports Car': 'รถสปอร์ต',
+  Hatchback: 'รถแฮทช์แบ็ก',
+  Pickup: 'รถกระบะ',
+};
+const FUEL_TH: Record<string, string> = { Petrol: 'เบนซิน', Diesel: 'ดีเซล', Hybrid: 'ไฮบริด', EV: 'ไฟฟ้า (EV)' };
+const TRANS_TH: Record<string, string> = { Automatic: 'เกียร์อัตโนมัติ', Manual: 'เกียร์ธรรมดา' };
+const COLOR_TH: Record<string, string> = {
+  white: 'ขาว',
+  black: 'ดำ',
+  silver: 'เงิน',
+  grey: 'เทา',
+  gray: 'เทา',
+  red: 'แดง',
+  blue: 'น้ำเงิน',
+  navy: 'กรมท่า',
+  green: 'เขียว',
+  brown: 'น้ำตาล',
+  yellow: 'เหลือง',
+  orange: 'ส้ม',
+  gold: 'ทอง',
+  beige: 'ครีม',
+  bronze: 'บรอนซ์',
+};
+
+const fromMap = (map: Record<string, string>, v?: string | null) => (v ? map[v] ?? v : '—');
+export const thType = (v?: string | null) => fromMap(TYPE_TH, v);
+export const thFuel = (v?: string | null) => fromMap(FUEL_TH, v);
+export const thTransmission = (v?: string | null) => fromMap(TRANS_TH, v);
+export const thColor = (v?: string | null) => (v ? COLOR_TH[v.trim().toLowerCase()] ?? v : '—');
 
 type MaybeUser = { id?: number; role?: string } | null | undefined;
 

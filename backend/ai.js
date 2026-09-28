@@ -14,7 +14,7 @@
 
 const FINANCE = { downPaymentPct: 0.25, flatRatePerYear: 0.0299, years: 5 };
 const INCOME_SHARE_FOR_CAR = 0.2; // rule of thumb: installment <= 20% of monthly income
-const AI_LANGUAGE = process.env.AI_LANGUAGE || 'English';
+const AI_LANGUAGE = process.env.AI_LANGUAGE || 'Thai';
 
 // ---------- small helpers ----------
 const num = (v) => {
@@ -25,7 +25,15 @@ const num = (v) => {
 const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const roundTo = (v, step) => Math.round(v / step) * step;
-const fmtTHB = (v) => `${Math.round(v).toLocaleString('en-US')} THB`;
+const fmtTHB = (v) => `${Math.round(v).toLocaleString('en-US')} บาท`;
+
+// Thai display names for the values stored in the database
+const TYPE_TH = { Sedan: 'รถเก๋ง', SUV: 'รถอเนกประสงค์ (SUV)', 'Sports Car': 'รถสปอร์ต', Hatchback: 'รถแฮทช์แบ็ก', Pickup: 'รถกระบะ' };
+const FUEL_TH = { Petrol: 'เบนซิน', Diesel: 'ดีเซล', Hybrid: 'ไฮบริด', EV: 'ไฟฟ้า (EV)' };
+const TRANS_TH = { Automatic: 'เกียร์อัตโนมัติ', Manual: 'เกียร์ธรรมดา' };
+const thType = (v) => TYPE_TH[v] || v;
+const thFuel = (v) => FUEL_TH[v] || v;
+const thTrans = (v) => TRANS_TH[v] || v;
 
 function toCar(row) {
   return {
@@ -111,34 +119,34 @@ function quantile(sorted, q) {
 // ============================================================
 const USAGE_PROFILES = {
   city: {
-    label: 'City driving',
+    label: 'ขับในเมือง',
     types: { Hatchback: 1, Sedan: 0.8, SUV: 0.5, 'Sports Car': 0.3, Pickup: 0.1 },
     weights: { economy: 2, smallEngine: 1 },
     preferTransmission: 'Automatic',
   },
   family: {
-    label: 'Family use',
+    label: 'ใช้กับครอบครัว',
     types: { SUV: 1, Sedan: 0.7, Pickup: 0.4, Hatchback: 0.3, 'Sports Car': 0 },
     weights: { space: 2.5, newness: 1 },
   },
   long_trip: {
-    label: 'Long trips',
+    label: 'เดินทางไกล',
     types: { Sedan: 1, SUV: 0.9, Pickup: 0.5, 'Sports Car': 0.5, Hatchback: 0.4 },
     weights: { economy: 1.5, newness: 1, lowMileage: 1 },
   },
   offroad: {
-    label: 'Off-road / upcountry',
+    label: 'ออฟโรด / ต่างจังหวัด',
     types: { Pickup: 1, SUV: 0.9, Sedan: 0.1, Hatchback: 0.1, 'Sports Car': 0 },
     weights: { power: 1.5 },
     preferFuels: ['Diesel'],
   },
   performance: {
-    label: 'Performance',
+    label: 'สมรรถนะ / ขับสนุก',
     types: { 'Sports Car': 1, Sedan: 0.5, SUV: 0.3, Hatchback: 0.3, Pickup: 0.1 },
     weights: { power: 2.5, newness: 0.5 },
   },
   economy: {
-    label: 'Low running cost',
+    label: 'ค่าใช้จ่ายต่ำ',
     types: { Hatchback: 1, Sedan: 0.8, SUV: 0.5, Pickup: 0.4, 'Sports Car': 0.1 },
     weights: { economy: 2.5, value: 1 },
     preferFuels: ['EV', 'Hybrid'],
@@ -172,13 +180,13 @@ function recommend(rows, prefs = {}) {
         const p = USAGE_PROFILES[key];
         const typeFit = p.types[car.type] ?? 0.4;
         add(typeFit, 2);
-        if (typeFit >= 0.9) reasons.push(`${car.type} is a strong fit for ${p.label.toLowerCase()}`);
+        if (typeFit >= 0.9) reasons.push(`${thType(car.type)} เหมาะกับการใช้งานแบบ "${p.label}"`);
         for (const [dim, w] of Object.entries(p.weights)) add(dims[dim], w);
         if (p.preferTransmission && car.transmission) add(car.transmission === p.preferTransmission ? 1 : 0.3, 0.5);
         if (p.preferFuels && car.fuel) {
           const match = p.preferFuels.includes(car.fuel);
           add(match ? 1 : 0.4, 1);
-          if (match) reasons.push(`${car.fuel} engine suits ${p.label.toLowerCase()}`);
+          if (match) reasons.push(`เชื้อเพลิง${thFuel(car.fuel)} เหมาะกับการใช้งานแบบ "${p.label}"`);
         }
       }
     } else {
@@ -193,25 +201,25 @@ function recommend(rows, prefs = {}) {
     if (passengers && car.seats != null) {
       if (car.seats >= passengers) {
         add(1, 1.5);
-        if (passengers >= 5) reasons.push(`${car.seats} seats — room for ${passengers} people`);
+        if (passengers >= 5) reasons.push(`${car.seats} ที่นั่ง — นั่งได้ ${passengers} คนสบายๆ`);
       } else {
         excludedBy = 'seats';
       }
     }
     if (fuelPref) {
       add(car.fuel === fuelPref ? 1 : 0, 1.5);
-      if (car.fuel === fuelPref) reasons.push(`${car.fuel}, as you prefer`);
+      if (car.fuel === fuelPref) reasons.push(`${thFuel(car.fuel)} ตามที่คุณต้องการ`);
     }
     if (transPref) {
       add(car.transmission === transPref ? 1 : 0, 1.5);
-      if (car.transmission === transPref) reasons.push(`${car.transmission} transmission, as you prefer`);
+      if (car.transmission === transPref) reasons.push(`${thTrans(car.transmission)} ตามที่คุณต้องการ`);
     }
 
     if (dims.economy != null && dims.economy >= 0.75) {
-      reasons.push(car.fuel === 'EV' ? 'Electric — lowest running cost' : `Fuel efficient (${car.fuelEconomy} km/l)`);
+      reasons.push(car.fuel === 'EV' ? 'รถไฟฟ้า — ค่าใช้จ่ายต่ำที่สุด' : `ประหยัดน้ำมัน (${car.fuelEconomy} กม./ลิตร)`);
     }
-    if (dims.lowMileage != null && dims.lowMileage >= 0.75) reasons.push(`Low mileage (${car.mileage.toLocaleString('en-US')} km)`);
-    if (dims.newness != null && dims.newness >= 0.75) reasons.push(`Recent model year (${car.year})`);
+    if (dims.lowMileage != null && dims.lowMileage >= 0.75) reasons.push(`ไมล์น้อย (${car.mileage.toLocaleString('en-US')} กม.)`);
+    if (dims.newness != null && dims.newness >= 0.75) reasons.push(`รถปีใหม่ (ปี ${car.year})`);
 
     const fitScore = fit / fitWeight;
 
@@ -225,7 +233,7 @@ function recommend(rows, prefs = {}) {
       } else if (ratio <= 1.1) {
         budgetStatus = 'stretch';
         budgetScore = 0.4;
-        reasons.push(`About ${Math.round((ratio - 1) * 100)}% over your budget`);
+        reasons.push(`เกินงบประมาณประมาณ ${Math.round((ratio - 1) * 100)}%`);
       } else {
         budgetStatus = 'over';
         excludedBy = excludedBy || 'budget';
@@ -267,19 +275,19 @@ function recommend(rows, prefs = {}) {
   const notes = [];
   if (suggestedMin != null) {
     const range = `${fmtTHB(suggestedMin)} – ${fmtTHB(suggestedMax)}`;
-    if (!budget) notes.push(`Cars that best match your needs mostly cost ${range}.`);
-    else if (budget < suggestedMin) notes.push(`The cars that best match your needs mostly cost ${range}. Your budget is below that — consider raising it a little or relaxing a requirement.`);
-    else if (budget > suggestedMax * 1.2) notes.push(`You could spend less: the best matches sit around ${range}.`);
-    else notes.push(`Your budget lines up well with the best-matching cars (${range}).`);
+    if (!budget) notes.push(`รถที่ตรงกับความต้องการของคุณที่สุดส่วนใหญ่ราคา ${range}`);
+    else if (budget < suggestedMin) notes.push(`รถที่ตรงกับความต้องการของคุณที่สุดส่วนใหญ่ราคา ${range} ซึ่งสูงกว่างบของคุณ — ลองเพิ่มงบอีกเล็กน้อย หรือลดเงื่อนไขบางข้อลง`);
+    else if (budget > suggestedMax * 1.2) notes.push(`คุณใช้งบน้อยกว่านี้ได้: รถที่เหมาะที่สุดอยู่ในช่วง ${range}`);
+    else notes.push(`งบของคุณเหมาะกับรถที่ตรงความต้องการที่สุดพอดี (${range})`);
   }
   if (affordableMax) {
-    notes.push(`To keep the installment under ${fmtTHB(maxMonthly)}/month (20% of income), aim for a car up to about ${fmtTHB(affordableMax)}.`);
-    if (budget && budget > affordableMax) notes.push('Your budget is above that — a bigger down payment would keep monthly costs safe.');
+    notes.push(`ถ้าต้องการให้ค่างวดไม่เกิน ${fmtTHB(maxMonthly)}/เดือน (20% ของรายได้) ควรเลือกรถราคาไม่เกินประมาณ ${fmtTHB(affordableMax)}`);
+    if (budget && budget > affordableMax) notes.push('งบของคุณสูงกว่านั้น — ถ้าดาวน์มากขึ้นจะช่วยให้ค่างวดต่อเดือนไม่หนักเกินไป');
   }
   if (budget) {
-    notes.push(`Estimated installment at your budget: ${fmtTHB(monthlyPayment(budget))}/month (${FINANCE.downPaymentPct * 100}% down, ${FINANCE.years} years, ${(FINANCE.flatRatePerYear * 100).toFixed(2)}% flat rate).`);
+    notes.push(`ค่างวดโดยประมาณที่งบของคุณ: ${fmtTHB(monthlyPayment(budget))}/เดือน (ดาวน์ ${FINANCE.downPaymentPct * 100}%, ผ่อน ${FINANCE.years} ปี, ดอกเบี้ยคงที่ ${(FINANCE.flatRatePerYear * 100).toFixed(2)}% ต่อปี)`);
   }
-  if (!results.length) notes.push('No car in stock matches all your requirements right now.');
+  if (!results.length) notes.push('ตอนนี้ยังไม่มีรถในสต็อกที่ตรงกับทุกเงื่อนไขของคุณ');
 
   return {
     results,
@@ -362,12 +370,12 @@ function fitPriceModel(cars) {
 // 3) Comparison
 // ============================================================
 const COMPARE_DIMENSIONS = [
-  { key: 'value', label: 'Value for money' },
-  { key: 'economy', label: 'Fuel economy' },
-  { key: 'newness', label: 'Model year' },
-  { key: 'lowMileage', label: 'Low mileage' },
-  { key: 'space', label: 'Space / seats' },
-  { key: 'power', label: 'Performance' },
+  { key: 'value', label: 'ความคุ้มค่า' },
+  { key: 'economy', label: 'ความประหยัดน้ำมัน' },
+  { key: 'newness', label: 'ความใหม่ของรถ' },
+  { key: 'lowMileage', label: 'ไมล์น้อย' },
+  { key: 'space', label: 'ความจุ / ที่นั่ง' },
+  { key: 'power', label: 'สมรรถนะ' },
 ];
 
 function similarityPct(a, b, ranges) {
@@ -537,11 +545,10 @@ async function summarizeRecommendation(prefs, result) {
   if (llm) return { text: llm, source: 'claude' };
 
   const [best, second] = top;
-  let text = `Best match: ${best.name} (${best.score}/100)`;
-  if (best.reasons.length) text += ` — ${best.reasons.slice(0, 2).join('; ')}`;
-  text += '.';
-  if (second) text += ` Runner-up: ${second.name} (${second.score}/100).`;
-  if (result.budget.notes[0]) text += ` ${result.budget.notes[0]}`;
+  let text = `รถที่เหมาะกับคุณที่สุด: ${best.name} (${best.score}/100)`;
+  if (best.reasons.length) text += ` — ${best.reasons.slice(0, 2).join(', ')}`;
+  if (second) text += ` · อันดับรองลงมา: ${second.name} (${second.score}/100)`;
+  if (result.budget.notes[0]) text += ` · ${result.budget.notes[0]}`;
   return { text, source: 'rules' };
 }
 
@@ -550,7 +557,7 @@ async function summarizeComparison(result) {
   const leads = {};
   for (const d of result.dimensions) {
     const id = result.winners[d.key];
-    if (id != null) (leads[nameOf(id)] = leads[nameOf(id)] || []).push(d.label.toLowerCase());
+    if (id != null) (leads[nameOf(id)] = leads[nameOf(id)] || []).push(d.label);
   }
 
   const llm = await askClaude(
@@ -570,13 +577,13 @@ async function summarizeComparison(result) {
 
   const parts = [];
   const best = result.cars.find((c) => c.id === result.bestOverallId);
-  if (best) parts.push(`Best overall: ${best.name} (${best.overall}/100).`);
-  for (const [name, dims] of Object.entries(leads)) parts.push(`${name} leads on ${dims.join(', ')}.`);
+  if (best) parts.push(`โดยรวมดีที่สุด: ${best.name} (${best.overall}/100)`);
+  for (const [name, dims] of Object.entries(leads)) parts.push(`${name} เด่นด้าน${dims.join(', ')}`);
   for (const c of result.cars) {
-    if (c.dealLabel === 'Good deal') parts.push(`${c.name} is priced about ${c.dealPct}% below its estimated market value.`);
-    if (c.dealLabel === 'Above market') parts.push(`${c.name} is about ${-c.dealPct}% above its estimated market value.`);
+    if (c.dealLabel === 'Good deal') parts.push(`${c.name} ราคาต่ำกว่าราคาตลาดที่ประเมินไว้ประมาณ ${c.dealPct}%`);
+    if (c.dealLabel === 'Above market') parts.push(`${c.name} ราคาสูงกว่าราคาตลาดที่ประเมินไว้ประมาณ ${-c.dealPct}%`);
   }
-  return { text: parts.join(' '), source: 'rules' };
+  return { text: parts.join(' · '), source: 'rules' };
 }
 
 module.exports = {
