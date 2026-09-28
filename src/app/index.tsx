@@ -1,5 +1,19 @@
+import { Pill } from '@/components/form-ui';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
+import {
+  authHeaders,
+  C,
+  canManageCar,
+  canSell,
+  Car,
+  confirmAction,
+  formatTHB,
+  FUELS,
+  normalizeCar,
+  notify,
+  TRANSMISSIONS,
+} from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -17,22 +31,6 @@ import {
   View
 } from 'react-native';
 
-// The DB returns columns exactly as they're named in MySQL (id, name, model,
-// type, price, image, stock) — this turns that into a consistent shape the
-// rest of the screens can rely on.
-function normalizeCar(item: any) {
-  return {
-    id: item.id,
-    name: item.name ?? '',
-    model: item.model ?? '',
-    type: item.type ?? '',
-    stock: item.stock ?? 0,
-    image: item.image ?? '',
-    price: Number(item.price ?? 0),
-  };
-}
-
-type Car = ReturnType<typeof normalizeCar>;
 type PriceTier = 'Low' | 'Mid' | 'High';
 type TieredCar = Car & { priceTier: PriceTier };
 
@@ -50,8 +48,10 @@ function clusterPricesLocally(data: Car[]): TieredCar[] {
 
   let assignments: number[] = [];
   let changed = true;
+  let iterations = 0;
 
-  while (changed) {
+  while (changed && iterations < 100) {
+    iterations++;
     changed = false;
     assignments = prices.map((price) => {
       const diffs = centroids.map((c) => Math.abs(price - c));
@@ -81,6 +81,46 @@ function clusterPricesLocally(data: Car[]): TieredCar[] {
   });
 }
 
+// ---------- Advanced filters ----------
+type SortKey = 'newest' | 'price_asc' | 'price_desc' | 'year_desc' | 'mileage_asc';
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'newest', label: 'Newest listing' },
+  { key: 'price_asc', label: 'Price: low → high' },
+  { key: 'price_desc', label: 'Price: high → low' },
+  { key: 'year_desc', label: 'Newest model year' },
+  { key: 'mileage_asc', label: 'Lowest mileage' },
+];
+
+type Filters = {
+  minPrice: string;
+  maxPrice: string;
+  minYear: string;
+  maxMileage: string;
+  fuel: string;
+  transmission: string;
+  sort: SortKey;
+  onlyMine: boolean;
+};
+
+const EMPTY_FILTERS: Filters = {
+  minPrice: '',
+  maxPrice: '',
+  minYear: '',
+  maxMileage: '',
+  fuel: 'All',
+  transmission: 'All',
+  sort: 'newest',
+  onlyMine: false,
+};
+
+const parseNum = (s: string) => {
+  const t = s.trim().replace(/,/g, '');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+const MAX_COMPARE = 4;
 const MAX_CONTENT_WIDTH = 1200;
 const CARD_GAP = 16;
 
@@ -123,9 +163,8 @@ export default function HomeScreen() {
   const { width, height: windowHeight } = useWindowDimensions();
 
   const cardWidth = width < 640 ? 220 : width < 960 ? 260 : 300;
-  const contentWidth = Math.min(width, MAX_CONTENT_WIDTH);
   const scrollStep = cardWidth + CARD_GAP;
-  const cardHeight = Math.round((cardWidth * 3) / 4) + 138;
+  const cardHeight = Math.round((cardWidth * 3) / 4) + 150;
   const searchOverlayHeight = Math.round(windowHeight * 0.5);
 
   const [cars, setCars] = useState<Car[]>([]);
@@ -135,6 +174,10 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<Car['id'][]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const scrollX = useRef(0);
 
@@ -173,17 +216,55 @@ export default function HomeScreen() {
     return ['All', ...unique];
   }, [cars]);
 
-  const filteredCars = cars.filter((item) => {
-    const matchesType = activeType === 'All' || item.type === activeType;
-    const matchesTier = activeTier === 'All' || tierById.get(item.id) === activeTier;
-    const matchesSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.model.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesType && matchesTier && matchesSearch;
-  });
+  const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) =>
+    setFilters((prev) => ({ ...prev, [key]: value }));
+
+  const activeFilterCount =
+    (filters.minPrice.trim() ? 1 : 0) +
+    (filters.maxPrice.trim() ? 1 : 0) +
+    (filters.minYear.trim() ? 1 : 0) +
+    (filters.maxMileage.trim() ? 1 : 0) +
+    (filters.fuel !== 'All' ? 1 : 0) +
+    (filters.transmission !== 'All' ? 1 : 0) +
+    (filters.sort !== 'newest' ? 1 : 0) +
+    (filters.onlyMine ? 1 : 0);
+
+  const filteredCars = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const minPrice = parseNum(filters.minPrice);
+    const maxPrice = parseNum(filters.maxPrice);
+    const minYear = parseNum(filters.minYear);
+    const maxMileage = parseNum(filters.maxMileage);
+
+    const list = cars.filter((item) => {
+      if (activeType !== 'All' && item.type !== activeType) return false;
+      if (activeTier !== 'All' && tierById.get(item.id) !== activeTier) return false;
+      if (q && !`${item.name} ${item.model}`.toLowerCase().includes(q)) return false;
+      if (minPrice != null && item.price < minPrice) return false;
+      if (maxPrice != null && item.price > maxPrice) return false;
+      if (minYear != null && (item.year == null || item.year < minYear)) return false;
+      if (maxMileage != null && (item.mileage == null || item.mileage > maxMileage)) return false;
+      if (filters.fuel !== 'All' && item.fuel !== filters.fuel) return false;
+      if (filters.transmission !== 'All' && item.transmission !== filters.transmission) return false;
+      if (filters.onlyMine && !(user && item.sellerId != null && Number(item.sellerId) === Number(user.id))) return false;
+      return true;
+    });
+
+    const sorted = [...list];
+    switch (filters.sort) {
+      case 'price_asc': sorted.sort((a, b) => a.price - b.price); break;
+      case 'price_desc': sorted.sort((a, b) => b.price - a.price); break;
+      case 'year_desc': sorted.sort((a, b) => (b.year ?? 0) - (a.year ?? 0)); break;
+      case 'mileage_asc': sorted.sort((a, b) => (a.mileage ?? Infinity) - (b.mileage ?? Infinity)); break;
+      default: break; // server already returns newest listings first
+    }
+    return sorted;
+  }, [cars, activeType, activeTier, searchQuery, filters, tierById, user]);
 
   const sectionTitle = searchQuery
     ? `Results for "${searchQuery}"`
+    : filters.onlyMine
+    ? 'My Listings'
     : activeType === 'All'
     ? 'All Cars'
     : activeType;
@@ -198,34 +279,46 @@ export default function HomeScreen() {
     try {
       const res = await fetch(api(`/api/inventory/${id}`), {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${user?.token}` },
+        headers: authHeaders(user?.token, false),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         fetchCars();
       } else {
-        alert(data.error || 'Failed to delete car');
+        notify(data.error || 'Failed to delete car');
       }
     } catch (err) {
       console.error(err);
-      alert('Unable to delete car');
+      notify('Unable to delete car');
     }
   };
 
-  const handleDeletePress = (id: number | string, name: string) => {
-    const message = `Are you sure you want to delete "${name}"?`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(message)) doDelete(id);
-    } else {
-      doDelete(id);
-    }
-  };
+  const handleDeletePress = (id: number | string, name: string) =>
+    confirmAction('Delete car', `Are you sure you want to delete "${name}"?`, () => doDelete(id));
 
   const openDetail = (item: Car) => {
-    router.push({
-      pathname: '/details',
-      params: { car: JSON.stringify(item), role: user?.role || 'user' }
+    router.push({ pathname: '/details', params: { car: JSON.stringify(item) } });
+  };
+
+  // ---------- Compare selection ----------
+  const toggleCompare = (id: Car['id']) => {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= MAX_COMPARE) {
+        notify(`You can compare up to ${MAX_COMPARE} cars`);
+        return prev;
+      }
+      return [...prev, id];
     });
+  };
+
+  const exitCompare = () => {
+    setCompareMode(false);
+    setCompareIds([]);
+  };
+
+  const goCompare = () => {
+    router.push({ pathname: '/compare', params: { ids: compareIds.join(',') } });
   };
 
   const scrollByStep = (direction: 1 | -1) => {
@@ -251,172 +344,290 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
 
-      <View style={styles.pageInner}>
-        {/* Top bar: brand + account actions */}
-        <View style={styles.topBar}>
-          <Text style={styles.brandTitle}>Noon Home Car</Text>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: compareMode ? 110 : 30 }}>
+        <View style={styles.pageInner}>
+          {/* Top bar: brand + account actions */}
+          <View style={styles.topBar}>
+            <Text style={styles.brandTitle}>Noon Home Car</Text>
 
-          <View style={styles.topBarActions}>
-            {user?.role === 'admin' && (
-              <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add')}>
-                <Text style={styles.addBtnText}>+ Add Car</Text>
+            <View style={styles.topBarActions}>
+              {canSell(user) && (
+                <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/add')}>
+                  <Text style={styles.addBtnText}>+ Sell Car</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.aiBtn} onPress={() => router.push('/ai-advisor')}>
+                <Text style={styles.aiBtnText}>✦ AI Advisor</Text>
               </TouchableOpacity>
-            )}
 
-            <TouchableOpacity style={styles.searchPill} onPress={openSearch}>
-              <SearchIcon size={12} color="#B0B0B0" />
-              <Text style={styles.searchPillText} numberOfLines={1}>
-                {searchQuery || 'Search'}
-              </Text>
-            </TouchableOpacity>
+              {user && (
+                <TouchableOpacity style={styles.actionBtnOutline} onPress={() => router.push('/inbox')}>
+                  <Text style={styles.actionBtnOutlineText}>Messages</Text>
+                </TouchableOpacity>
+              )}
 
-            {user ? (
-              <TouchableOpacity style={styles.actionBtnOutline} onPress={handleLogout}>
-                <Text style={styles.actionBtnOutlineText}>Logout</Text>
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => router.replace('/login')}>
-                <Text style={styles.actionBtnPrimaryText}>Sign In</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {user && (
-          <Text style={styles.welcomeText}>
-            Welcome, {user.username} ({user.role.toUpperCase()})
-          </Text>
-        )}
-
-        {/* Type tabs (Sedan / SUV / Sports Car / ...) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
-          {types.map((t) => {
-            const active = t === activeType;
-            return (
-              <TouchableOpacity
-                key={t}
-                style={[styles.tabPill, active && styles.tabPillActive]}
-                onPress={() => setActiveType(t)}
-              >
-                <Text style={[styles.tabPillText, active && styles.tabPillTextActive]}>{t}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Price-tier filter, from the same K-Means grouping shown on each card */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tierTabsRow}>
-          {(['All', 'Low', 'Mid', 'High'] as const).map((tier) => {
-            const active = tier === activeTier;
-            return (
-              <TouchableOpacity
-                key={tier}
-                style={[styles.tierTabPill, active && styles.tierTabPillActive]}
-                onPress={() => setActiveTier(tier)}
-              >
-                <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>
-                  {tier === 'All' ? 'All Prices' : tier}
+              <TouchableOpacity style={styles.searchPill} onPress={openSearch}>
+                <SearchIcon size={12} color="#B0B0B0" />
+                <Text style={styles.searchPillText} numberOfLines={1}>
+                  {searchQuery || 'Search'}
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
 
-        {/* Section header with prev/next arrows */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-          <View style={styles.arrowRow}>
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => scrollByStep(-1)}>
-              <Text style={styles.arrowText}>{'\u2039'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.arrowBtn} onPress={() => scrollByStep(1)}>
-              <Text style={styles.arrowText}>{'\u203A'}</Text>
-            </TouchableOpacity>
+              {user ? (
+                <TouchableOpacity style={styles.actionBtnOutline} onPress={handleLogout}>
+                  <Text style={styles.actionBtnOutlineText}>Logout</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.actionBtnPrimary} onPress={() => router.replace('/login')}>
+                  <Text style={styles.actionBtnPrimaryText}>Sign In</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
 
-        {loading ? (
-          <Text style={styles.emptyText}>Loading cars…</Text>
-        ) : filteredCars.length === 0 ? (
-          <Text style={styles.emptyText}>No cars found</Text>
-        ) : (
-          <ScrollView
-            ref={scrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            onScroll={(e) => { scrollX.current = e.nativeEvent.contentOffset.x; }}
-            scrollEventThrottle={16}
-            style={{ height: cardHeight, flexGrow: 0 }}
-            contentContainerStyle={styles.carousel}
-          >
-            {filteredCars.map((item) => {
-              const isLow = item.stock < 2;
-              const tier = tierById.get(item.id);
+          {user && (
+            <Text style={styles.welcomeText}>
+              Welcome, {user.username} ({user.role === 'user' ? 'BUYER' : String(user.role).toUpperCase()})
+            </Text>
+          )}
+
+          {/* Type tabs (Sedan / SUV / Sports Car / ...) */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
+            {types.map((t) => {
+              const active = t === activeType;
               return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => openDetail(item)}
-                  style={({ hovered, pressed }) => [
-                    styles.card,
-                    { width: cardWidth },
-                    hovered && styles.cardHovered,
-                    pressed && styles.cardPressed,
-                  ]}
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.tabPill, active && styles.tabPillActive]}
+                  onPress={() => setActiveType(t)}
                 >
-                  <View style={styles.imageWrap}>
-                    {item.image ? (
-                      <Image source={{ uri: item.image }} style={styles.carImage} resizeMode="cover" />
-                    ) : (
-                      <ImagePlaceholder />
-                    )}
-                    {tier && (
-                      <View
-                        style={[
-                          styles.tierBadge,
-                          tier === 'Low' && styles.tierBadgeLow,
-                          tier === 'Mid' && styles.tierBadgeMid,
-                          tier === 'High' && styles.tierBadgeHigh,
-                        ]}
-                      >
-                        <Text style={[styles.tierBadgeText, tier === 'Low' && styles.tierBadgeTextLow]}>
-                          {tier}
-                        </Text>
-                      </View>
-                    )}
-                    {isLow && (
-                      <View style={styles.stockTag}>
-                        <Text style={styles.stockTagText}>
-                          {item.stock === 0 ? 'SOLD OUT' : `ONLY ${item.stock} LEFT`}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.carName} numberOfLines={2}>{item.name}</Text>
-                    <Text style={styles.carModel} numberOfLines={1}>{item.model || item.type}</Text>
-                    <Text style={styles.carPrice}>{item.price.toLocaleString()} THB</Text>
-                  </View>
-
-                  {user?.role === 'admin' && (
-                    <View style={styles.adminActionRow}>
-                      <TouchableOpacity
-                        style={styles.editBtn}
-                        onPress={() => router.push({ pathname: '/edit', params: { car: JSON.stringify(item) } })}
-                      >
-                        <Text style={styles.editText}>Edit</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeletePress(item.id, item.name)}>
-                        <Text style={styles.deleteText}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </Pressable>
+                  <Text style={[styles.tabPillText, active && styles.tabPillTextActive]}>{t}</Text>
+                </TouchableOpacity>
               );
             })}
           </ScrollView>
-        )}
-      </View>
+
+          {/* Price tiers (K-Means) + advanced filter toggle */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tierTabsRow}>
+            {(['All', 'Low', 'Mid', 'High'] as const).map((tier) => {
+              const active = tier === activeTier;
+              return (
+                <TouchableOpacity
+                  key={tier}
+                  style={[styles.tierTabPill, active && styles.tierTabPillActive]}
+                  onPress={() => setActiveTier(tier)}
+                >
+                  <Text style={[styles.tierTabPillText, active && styles.tierTabPillTextActive]}>
+                    {tier === 'All' ? 'All Prices' : tier}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={[styles.filterToggle, (filtersOpen || activeFilterCount > 0) && styles.filterToggleActive]}
+              onPress={() => setFiltersOpen((v) => !v)}
+            >
+              <Text style={styles.filterToggleText}>
+                {filtersOpen ? '▲' : '▼'} Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {filtersOpen && (
+            <View style={styles.filterPanel}>
+              <View style={styles.filterInputs}>
+                {([
+                  ['minPrice', 'Min price (THB)'],
+                  ['maxPrice', 'Max price (THB)'],
+                  ['minYear', 'Year from'],
+                  ['maxMileage', 'Max mileage (km)'],
+                ] as const).map(([key, label]) => (
+                  <View key={key} style={styles.filterInputWrap}>
+                    <Text style={styles.filterLabel}>{label}</Text>
+                    <TextInput
+                      style={styles.filterInput}
+                      value={filters[key]}
+                      onChangeText={(v) => setFilter(key, v)}
+                      keyboardType="numeric"
+                      placeholder="Any"
+                      placeholderTextColor="#555"
+                    />
+                  </View>
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Fuel</Text>
+              <View style={styles.filterPills}>
+                {['All', ...FUELS].map((f) => (
+                  <Pill key={f} small label={f} active={filters.fuel === f} onPress={() => setFilter('fuel', f)} />
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Transmission</Text>
+              <View style={styles.filterPills}>
+                {['All', ...TRANSMISSIONS].map((t) => (
+                  <Pill key={t} small label={t} active={filters.transmission === t} onPress={() => setFilter('transmission', t)} />
+                ))}
+              </View>
+
+              <Text style={styles.filterLabel}>Sort by</Text>
+              <View style={styles.filterPills}>
+                {SORTS.map((s) => (
+                  <Pill key={s.key} small label={s.label} active={filters.sort === s.key} onPress={() => setFilter('sort', s.key)} />
+                ))}
+              </View>
+
+              <View style={styles.filterFooter}>
+                {canSell(user) && (
+                  <Pill small label="Only my listings" active={filters.onlyMine} onPress={() => setFilter('onlyMine', !filters.onlyMine)} />
+                )}
+                <TouchableOpacity onPress={() => setFilters(EMPTY_FILTERS)}>
+                  <Text style={styles.resetText}>Reset filters</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Section header with compare toggle + prev/next arrows */}
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+              <Text style={styles.countText}>{filteredCars.length} car{filteredCars.length === 1 ? '' : 's'}</Text>
+            </View>
+            <View style={styles.arrowRow}>
+              <TouchableOpacity
+                style={[styles.compareToggle, compareMode && styles.compareToggleActive]}
+                onPress={() => (compareMode ? exitCompare() : setCompareMode(true))}
+              >
+                <Text style={styles.compareToggleText}>{compareMode ? 'Cancel compare' : '⇄ Compare'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => scrollByStep(-1)}>
+                <Text style={styles.arrowText}>{'‹'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.arrowBtn} onPress={() => scrollByStep(1)}>
+                <Text style={styles.arrowText}>{'›'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {compareMode && <Text style={styles.compareHint}>Tap 2–{MAX_COMPARE} cars to compare them with AI.</Text>}
+
+          {loading ? (
+            <Text style={styles.emptyText}>Loading cars…</Text>
+          ) : filteredCars.length === 0 ? (
+            <Text style={styles.emptyText}>No cars found</Text>
+          ) : (
+            <ScrollView
+              ref={scrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              onScroll={(e) => { scrollX.current = e.nativeEvent.contentOffset.x; }}
+              scrollEventThrottle={16}
+              style={{ minHeight: cardHeight, flexGrow: 0 }}
+              contentContainerStyle={styles.carousel}
+            >
+              {filteredCars.map((item) => {
+                const isLow = item.stock < 2;
+                const tier = tierById.get(item.id);
+                const selected = compareIds.includes(item.id);
+                const subtitle = [item.year, item.model || item.type, item.mileage != null ? `${item.mileage.toLocaleString()} km` : null]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => (compareMode ? toggleCompare(item.id) : openDetail(item))}
+                    style={({ hovered, pressed }: any) => [
+                      styles.card,
+                      { width: cardWidth },
+                      hovered && styles.cardHovered,
+                      pressed && styles.cardPressed,
+                      selected && styles.cardSelected,
+                    ]}
+                  >
+                    <View style={styles.imageWrap}>
+                      {item.image ? (
+                        <Image source={{ uri: item.image }} style={styles.carImage} resizeMode="cover" />
+                      ) : (
+                        <ImagePlaceholder />
+                      )}
+                      {tier && (
+                        <View
+                          style={[
+                            styles.tierBadge,
+                            tier === 'Low' && styles.tierBadgeLow,
+                            tier === 'Mid' && styles.tierBadgeMid,
+                            tier === 'High' && styles.tierBadgeHigh,
+                          ]}
+                        >
+                          <Text style={[styles.tierBadgeText, tier === 'Low' && styles.tierBadgeTextLow]}>
+                            {tier}
+                          </Text>
+                        </View>
+                      )}
+                      {isLow && (
+                        <View style={styles.stockTag}>
+                          <Text style={styles.stockTagText}>
+                            {item.stock === 0 ? 'SOLD OUT' : `ONLY ${item.stock} LEFT`}
+                          </Text>
+                        </View>
+                      )}
+                      {compareMode && (
+                        <View style={[styles.checkBox, selected && styles.checkBoxOn]}>
+                          <Text style={styles.checkMark}>{selected ? '✓' : ''}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.carName} numberOfLines={2}>{item.name}</Text>
+                      <Text style={styles.carModel} numberOfLines={1}>{subtitle}</Text>
+                      <Text style={styles.carPrice}>{formatTHB(item.price)}</Text>
+                    </View>
+
+                    {!compareMode && canManageCar(user, item) && (
+                      <View style={styles.adminActionRow}>
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          onPress={() => router.push({ pathname: '/edit', params: { car: JSON.stringify(item) } })}
+                        >
+                          <Text style={styles.editText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeletePress(item.id, item.name)}>
+                          <Text style={styles.deleteText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Compare tray */}
+      {compareMode && (
+        <View style={styles.compareBar}>
+          <Text style={styles.compareBarText}>
+            {compareIds.length} selected
+            {compareIds.length < 2 ? ' — pick at least 2' : ''}
+          </Text>
+          <View style={styles.compareBarActions}>
+            <TouchableOpacity onPress={() => setCompareIds([])}>
+              <Text style={styles.resetText}>Clear</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.compareGo, compareIds.length < 2 && { opacity: 0.4 }]}
+              disabled={compareIds.length < 2}
+              onPress={goCompare}
+            >
+              <Text style={styles.compareGoText}>Compare with AI</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Half-screen search panel — the carousel stays visible below it */}
       {searchOpen && (
@@ -470,86 +681,147 @@ const styles = StyleSheet.create({
   // Palette: near-black background, a single racing-red accent for
   // anything actionable or urgent (buttons, price, low-stock/sold-out),
   // everything else stays grayscale so the red actually stands out.
-  screen: { flex: 1, backgroundColor: '#0A0A0A' },
-  pageInner: { flex: 1, width: '100%', maxWidth: MAX_CONTENT_WIDTH, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 16 },
+  screen: { flex: 1, backgroundColor: C.bg },
+  pageInner: { width: '100%', maxWidth: MAX_CONTENT_WIDTH, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 16 },
 
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  topBar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   brandTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 1 },
-  welcomeText: { fontSize: 12, color: '#8A8A8A', marginTop: 4, marginBottom: 4 },
+  welcomeText: { fontSize: 12, color: C.muted, marginTop: 6, marginBottom: 4 },
 
-  topBarActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  addBtn: { backgroundColor: '#E4001B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  topBarActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  addBtn: { backgroundColor: C.red, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  aiBtn: { borderWidth: 1, borderColor: C.red, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1F0A0C' },
+  aiBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 
   searchPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: C.input,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
     maxWidth: 160,
     gap: 6,
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: C.border,
   },
   searchPillText: { fontSize: 13, color: '#B0B0B0' },
 
-  actionBtnPrimary: { backgroundColor: '#E4001B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  actionBtnPrimary: { backgroundColor: C.red, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   actionBtnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  actionBtnOutline: { borderWidth: 1, borderColor: '#333', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  actionBtnOutline: { borderWidth: 1, borderColor: C.borderStrong, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   actionBtnOutlineText: { color: '#fff', fontWeight: '600', fontSize: 12 },
 
   tabsRow: { marginTop: 18, flexGrow: 0 },
-  tabPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#262626' },
-  tabPillActive: { backgroundColor: '#E4001B', borderColor: '#E4001B' },
-  tabPillText: { fontSize: 13, fontWeight: '600', color: '#D0D0D0' },
+  tabPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, marginRight: 8, backgroundColor: C.input, borderWidth: 1, borderColor: C.border },
+  tabPillActive: { backgroundColor: C.red, borderColor: C.red },
+  tabPillText: { fontSize: 13, fontWeight: '600', color: C.soft },
   tabPillTextActive: { color: '#fff' },
 
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 14 },
+  // Price-tier tabs — same pill style as type tabs, on their own row.
+  tierTabsRow: { marginTop: 10, flexGrow: 0 },
+  tierTabPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: C.borderStrong },
+  tierTabPillActive: { backgroundColor: C.red, borderColor: C.red },
+  tierTabPillText: { fontSize: 12, fontWeight: '600', color: C.soft },
+  tierTabPillTextActive: { color: '#fff' },
+
+  filterToggle: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: C.borderStrong, backgroundColor: C.input },
+  filterToggleActive: { borderColor: C.red },
+  filterToggleText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+
+  filterPanel: { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  filterInputs: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6 },
+  filterInputWrap: { flexGrow: 1, flexBasis: 130 },
+  filterLabel: { fontSize: 11, fontWeight: '700', color: C.muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  filterInput: { backgroundColor: C.input, borderWidth: 1, borderColor: '#2A2A2A', color: '#fff', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, marginBottom: 8 },
+  filterPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  filterFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 },
+  resetText: { color: '#999', fontWeight: '700', fontSize: 13 },
+
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, marginBottom: 10, gap: 10, flexWrap: 'wrap' },
   sectionTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
-  arrowRow: { flexDirection: 'row', gap: 8 },
-  arrowBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 12, color: C.muted, marginTop: 2 },
+  arrowRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  arrowBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
   arrowText: { fontSize: 18, color: '#fff', fontWeight: '700' },
+  compareToggle: { paddingHorizontal: 12, height: 34, borderRadius: 17, borderWidth: 1, borderColor: C.borderStrong, justifyContent: 'center' },
+  compareToggleActive: { borderColor: C.red, backgroundColor: '#1F0A0C' },
+  compareToggleText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  compareHint: { color: C.muted, fontSize: 12, marginBottom: 10 },
 
   emptyText: { color: '#777', textAlign: 'center', marginTop: 60 },
 
   carousel: { gap: CARD_GAP, alignItems: 'flex-start' },
   card: {
-    backgroundColor: '#141414',
+    backgroundColor: C.card,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#262626',
+    borderColor: C.border,
     alignSelf: 'flex-start',
     ...(Platform.OS === 'web'
       ? ({ transitionProperty: 'transform, box-shadow, border-color', transitionDuration: '150ms' } as any)
       : null),
   },
   cardHovered: Platform.OS === 'web'
-    ? ({ transform: [{ translateY: -4 }], borderColor: '#E4001B', boxShadow: '0 10px 24px rgba(228,0,27,0.18)' } as any)
+    ? ({ transform: [{ translateY: -4 }], borderColor: C.red, boxShadow: '0 10px 24px rgba(228,0,27,0.18)' } as any)
     : {},
   cardPressed: { opacity: 0.9 },
+  cardSelected: { borderColor: C.red, borderWidth: 2 },
 
   imageWrap: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#1E1E1E' },
   carImage: { width: '100%', height: '100%' },
 
-  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616', paddingHorizontal: 10, borderBottomWidth: 2, borderBottomColor: '#E4001B' },
-  placeholderText: { color: '#E4001B', fontSize: 18, fontWeight: '800', letterSpacing: 3 },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616', paddingHorizontal: 10, borderBottomWidth: 2, borderBottomColor: C.red },
+  placeholderText: { color: C.red, fontSize: 18, fontWeight: '800', letterSpacing: 3 },
 
-  stockTag: { position: 'absolute', left: 0, bottom: 0, backgroundColor: '#E4001B', paddingHorizontal: 8, paddingVertical: 4 },
+  stockTag: { position: 'absolute', left: 0, bottom: 0, backgroundColor: C.red, paddingHorizontal: 8, paddingVertical: 4 },
   stockTagText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
-  cardInfo: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4 },
+  checkBox: { position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  checkBoxOn: { backgroundColor: C.red, borderColor: C.red },
+  checkMark: { color: '#fff', fontWeight: '900', fontSize: 14 },
+
+  cardInfo: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
   carName: { fontSize: 13, fontWeight: '600', color: '#fff', lineHeight: 17 },
   carModel: { fontSize: 12, color: '#8C8C8C', marginTop: 3 },
-  carPrice: { fontSize: 13, fontWeight: '700', color: '#E4001B', marginTop: 4 },
+  carPrice: { fontSize: 13, fontWeight: '700', color: C.red, marginTop: 4 },
 
-  adminActionRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingBottom: 10, paddingTop: 4 },
+  adminActionRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingBottom: 10, paddingTop: 2 },
   editBtn: { flex: 1, backgroundColor: 'transparent', paddingVertical: 6, borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: '#3A3A3A' },
   editText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  deleteBtn: { flex: 1, backgroundColor: '#E4001B', paddingVertical: 6, borderRadius: 6, alignItems: 'center' },
+  deleteBtn: { flex: 1, backgroundColor: C.red, paddingVertical: 6, borderRadius: 6, alignItems: 'center' },
   deleteText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+
+  // Price-tier badge on each card — red intensity (muted → solid) marks
+  // Low/Mid/High. Sits opposite the low-stock tag so they never collide.
+  tierBadge: { position: 'absolute', right: 0, top: 0, paddingHorizontal: 8, paddingVertical: 4, borderBottomLeftRadius: 6 },
+  tierBadgeLow: { backgroundColor: '#2A2A2A' },
+  tierBadgeMid: { backgroundColor: C.redDim },
+  tierBadgeHigh: { backgroundColor: C.red },
+  tierBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  tierBadgeTextLow: { color: C.soft },
+
+  compareBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: C.panel,
+    borderTopWidth: 1,
+    borderTopColor: C.red,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  compareBarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  compareBarActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  compareGo: { backgroundColor: C.red, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
+  compareGoText: { color: '#fff', fontWeight: '800', fontSize: 13 },
 
   // Search overlay: a dropdown panel over the top half of the screen, with
   // a dim backdrop over the remaining area so the carousel still peeks
@@ -567,9 +839,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#111',
+    backgroundColor: C.panel,
     borderBottomWidth: 1,
-    borderBottomColor: '#262626',
+    borderBottomColor: C.border,
     zIndex: 20,
     ...(Platform.OS === 'web' ? ({ boxShadow: '0 12px 24px rgba(0,0,0,0.5)' } as any) : null),
   },
@@ -579,9 +851,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
+    backgroundColor: C.input,
     borderWidth: 1.5,
-    borderColor: '#E4001B',
+    borderColor: C.red,
     borderRadius: 10,
     paddingHorizontal: 14,
     gap: 8,
@@ -589,26 +861,8 @@ const styles = StyleSheet.create({
   searchOverlayInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: '#fff' },
   cancelText: { fontSize: 14, fontWeight: '600', color: '#fff' },
 
-  popularLabel: { fontSize: 13, color: '#8A8A8A', fontWeight: '600', marginTop: 28, marginBottom: 12 },
+  popularLabel: { fontSize: 13, color: C.muted, fontWeight: '600', marginTop: 28, marginBottom: 12 },
   popularTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  popularTag: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#262626' },
+  popularTag: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: C.input, borderWidth: 1, borderColor: C.border },
   popularTagText: { fontSize: 14, fontWeight: '600', color: '#fff' },
-
-  // Price-tier tabs — same pill style as type tabs, on their own row.
-  tierTabsRow: { marginTop: 10, flexGrow: 0 },
-  tierTabPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#333' },
-  tierTabPillActive: { backgroundColor: '#E4001B', borderColor: '#E4001B' },
-  tierTabPillText: { fontSize: 12, fontWeight: '600', color: '#D0D0D0' },
-  tierTabPillTextActive: { color: '#fff' },
-
-  // Price-tier badge on each card — red intensity (muted → solid) marks
-  // Low/Mid/High, matching the site's single accent color instead of a
-  // separate palette. Sits opposite the low-stock tag so the two never
-  // collide.
-  tierBadge: { position: 'absolute', right: 0, top: 0, paddingHorizontal: 8, paddingVertical: 4, borderBottomLeftRadius: 6 },
-  tierBadgeLow: { backgroundColor: '#2A2A2A' },
-  tierBadgeMid: { backgroundColor: '#8A0010' },
-  tierBadgeHigh: { backgroundColor: '#E4001B' },
-  tierBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
-  tierBadgeTextLow: { color: '#D0D0D0' },
 });

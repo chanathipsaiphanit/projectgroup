@@ -11,6 +11,10 @@ export default function RootLayout() {
         <Stack.Screen name="add" />
         <Stack.Screen name="details" />
         <Stack.Screen name="edit" />
+        <Stack.Screen name="inbox" />
+        <Stack.Screen name="chat" />
+        <Stack.Screen name="ai-advisor" />
+        <Stack.Screen name="compare" />
       </Stack>
     </AuthProvider>
   );
