@@ -1,4 +1,5 @@
-import { createContext, ReactNode, useContext, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 // 'user' = buyer, 'seller' = can list cars, 'admin' = manages everything
 export type Role = 'admin' | 'seller' | 'user';
@@ -18,11 +19,29 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const STORAGE_KEY = 'noon.auth.user';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
 
-  const login = (u: AuthUser) => setUser(u);
-  const logout = () => setUser(null);
+  // Restore the session so a page refresh / app restart keeps you signed in
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((raw) => {
+        if (raw) setUser((current) => current ?? JSON.parse(raw));
+      })
+      .catch(() => {});
+  }, []);
+
+  const login = (u: AuthUser) => {
+    setUser(u);
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(u)).catch(() => {});
+  };
+
+  const logout = () => {
+    setUser(null);
+    AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+  };
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
@@ -38,8 +57,3 @@ export function useAuth() {
   }
   return ctx;
 }
-
-// Note: this only holds the session in memory, so a full app restart
-// logs the user out. If you want login to survive restarts, swap the
-// useState above for a small AsyncStorage-backed version — ask if you
-// want that added.

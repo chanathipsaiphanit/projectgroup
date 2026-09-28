@@ -1,5 +1,5 @@
 import { api } from '@/config';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,11 +20,13 @@ const ACCOUNT_TYPES = [
 
 export default function RegisterScreen() {
   const router = useRouter();
+  // "Sell a car" on the home screen links here with ?role=seller
+  const params = useLocalSearchParams<{ role?: string }>();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState<'user' | 'seller'>('user');
+  const [role, setRole] = useState<'user' | 'seller'>(params.role === 'seller' ? 'seller' : 'user');
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
