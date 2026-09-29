@@ -2,6 +2,7 @@ import { Field, Heading, Pill, uiStyles } from '@/components/form-ui';
 import { api } from '@/config';
 import { C, formatTHB, FUELS, notify, resolveImage, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
 import { useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -55,6 +56,7 @@ const parseNum = (s: string) => {
 
 export default function AiAdvisorScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const [budget, setBudget] = useState('');
   const [income, setIncome] = useState('');
   const [passengers, setPassengers] = useState('');
@@ -107,7 +109,7 @@ export default function AiAdvisorScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
+        <TouchableOpacity onPress={() => goBack()} style={{ marginBottom: 12 }}>
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
 

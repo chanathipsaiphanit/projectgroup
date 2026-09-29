@@ -2,6 +2,7 @@ import { api } from '@/config';
 import { Heading } from '@/components/form-ui';
 import { C, formatKm, formatTHB, notify, resolveImage, thFuel, thTransmission, thType } from '@/lib/cars';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -64,6 +65,7 @@ const DIM_TH: Record<DimKey, string> = {
 
 export default function CompareScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const params = useLocalSearchParams<{ ids?: string }>();
   const ids = useMemo(() => (params.ids || '').split(',').filter(Boolean), [params.ids]);
 
@@ -118,7 +120,7 @@ export default function CompareScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
+        <TouchableOpacity onPress={() => goBack()} style={{ marginBottom: 12 }}>
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
         <Heading style={styles.title} th="⇄ เปรียบเทียบรถ" en="Compare Cars" />

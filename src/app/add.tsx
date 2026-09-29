@@ -3,10 +3,12 @@ import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import { authHeaders, C, canSell, notify } from '@/lib/cars';
 import { useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function AddCarScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const { user } = useAuth();
 
   if (!canSell(user)) {
@@ -33,7 +35,7 @@ export default function AddCarScreen() {
     router.replace('/my-cars');
   };
 
-  return <CarForm title="ลงขายรถ" titleEn="Sell a Car" submitLabel="บันทึกและลงขาย" onSubmit={submit} onCancel={() => router.back()} />;
+  return <CarForm title="ลงขายรถ" titleEn="Sell a Car" submitLabel="บันทึกและลงขาย" onSubmit={submit} onCancel={() => goBack()} />;
 }
 
 const styles = StyleSheet.create({
