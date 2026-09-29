@@ -81,7 +81,8 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 14, fontWeight: '700', color: C.soft },
   pillTextSmall: { fontSize: 12, fontWeight: '600' },
   pillTextActive: { color: '#fff' },
-  field: { marginBottom: 12, flexGrow: 1, flexBasis: 140 },
+  // minWidth (not flexBasis) so a field in a column doesn't turn into a 140px-tall box
+  field: { marginBottom: 12, flexGrow: 1, minWidth: 140 },
   label: { fontSize: 12, fontWeight: '700', color: '#999', marginBottom: 6 },
   input: { borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: C.input, color: '#fff', padding: 12, borderRadius: 8, fontSize: 15 },
 });
