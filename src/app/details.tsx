@@ -1,4 +1,5 @@
 import { Heading, uiStyles } from '@/components/form-ui';
+import PhotoViewer from '@/components/photo-viewer';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import {
@@ -56,6 +57,8 @@ export default function CarDetailScreen() {
   const [contactOpen, setContactOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -82,6 +85,8 @@ export default function CarDetailScreen() {
     );
   }
 
+  const photos = car.images;
+  const shown = Math.min(photoIndex, Math.max(photos.length - 1, 0));
   const isLow = car.stock < 2;
   const canManage = canManageCar(user, car);
 
@@ -155,12 +160,39 @@ export default function CarDetailScreen() {
         </TouchableOpacity>
 
         <View style={[styles.layout, isWide && styles.layoutWide]}>
-          <View style={[styles.imageBox, isWide && styles.imageBoxWide]}>
-            {car.image ? (
-              <Image source={{ uri: car.image }} style={styles.carImg} resizeMode="contain" />
-            ) : (
-              <Text style={styles.placeholderText}>NOON</Text>
+          <View style={[styles.gallery, isWide && styles.imageBoxWide]}>
+            <View style={styles.imageBox}>
+              {photos.length ? (
+                <TouchableOpacity style={styles.carImg} onPress={() => setViewerIndex(shown)}>
+                  <Image source={{ uri: photos[shown] }} style={styles.carImg} resizeMode="contain" />
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.placeholderText}>NOON</Text>
+              )}
+              {photos.length > 1 && (
+                <>
+                  <TouchableOpacity style={[styles.galleryArrow, { left: 8 }]} onPress={() => setPhotoIndex((shown - 1 + photos.length) % photos.length)}>
+                    <Text style={styles.galleryArrowText}>{'‹'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.galleryArrow, { right: 8 }]} onPress={() => setPhotoIndex((shown + 1) % photos.length)}>
+                    <Text style={styles.galleryArrowText}>{'›'}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.galleryCount}>
+                    <Text style={styles.galleryCountText}>{`${shown + 1} / ${photos.length}`}</Text>
+                  </View>
+                </>
+              )}
+            </View>
+            {photos.length > 1 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
+                {photos.map((p, i) => (
+                  <TouchableOpacity key={`${p}-${i}`} onPress={() => setPhotoIndex(i)} style={[styles.thumb, i === shown && styles.thumbActive]}>
+                    <Image source={{ uri: p }} style={styles.carImg} resizeMode="cover" />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             )}
+            {photos.length > 0 && <Text style={styles.galleryHint}>แตะที่รูปเพื่อดูแบบเต็มจอ</Text>}
           </View>
 
           <View style={[styles.info, isWide && styles.infoWide]}>
@@ -237,6 +269,7 @@ export default function CarDetailScreen() {
           </>
         )}
       </ScrollView>
+      <PhotoViewer photos={photos} index={viewerIndex} onChange={setViewerIndex} onClose={() => setViewerIndex(null)} />
     </SafeAreaView>
   );
 }
@@ -267,6 +300,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   imageBoxWide: { width: 420 },
+  gallery: { width: '100%', gap: 8 },
+  galleryArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryArrowText: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: -2 },
+  galleryCount: { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  galleryCountText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  thumbRow: { gap: 8 },
+  thumb: { width: 80, height: 60, borderRadius: 6, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: '#1E1E1E' },
+  thumbActive: { borderColor: C.red },
+  galleryHint: { color: C.muted, fontSize: 11 },
   carImg: { width: '100%', height: '100%' },
   placeholderText: { color: C.red, fontSize: 20, fontWeight: '800', letterSpacing: 3 },
 

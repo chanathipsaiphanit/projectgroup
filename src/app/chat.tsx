@@ -1,12 +1,15 @@
 import { Field, Heading, uiStyles } from '@/components/form-ui';
+import PhotoViewer from '@/components/photo-viewer';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
-import { authHeaders, C, formatTHB, notify } from '@/lib/cars';
+import { authHeaders, C, formatTHB, notify, parseImages, resolveImage } from '@/lib/cars';
+import { pickAndUploadPhotos } from '@/lib/photos';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Image,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -17,7 +20,9 @@ import {
   View
 } from 'react-native';
 
-type Message = { id: number; sender_id: number; body: string; created_at: string };
+type Message = { id: number; sender_id: number; body: string; images: string | null; created_at: string };
+
+const MAX_CHAT_PHOTOS = 6;
 type Appointment = {
   id: number;
   proposed_by: number;
@@ -65,6 +70,9 @@ export default function ChatScreen() {
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<string[]>([]); // uploaded, not sent yet
+  const [uploading, setUploading] = useState(false);
+  const [viewer, setViewer] = useState<{ photos: string[]; index: number } | null>(null);
   const [apptOpen, setApptOpen] = useState(false);
   const [appt, setAppt] = useState({ date: tomorrow(), time: '10:00', location: '', note: '' });
   const scrollRef = useRef<ScrollView>(null);
@@ -122,13 +130,26 @@ export default function ChatScreen() {
     return data;
   };
 
+  const attachPhotos = async () => {
+    setUploading(true);
+    try {
+      const added = await pickAndUploadPhotos(user.token, MAX_CHAT_PHOTOS - attachments.length);
+      setAttachments((prev) => [...prev, ...added].slice(0, MAX_CHAT_PHOTOS));
+    } catch (err: any) {
+      notify(err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const sendMessage = async () => {
     const body = text.trim();
-    if (!body) return;
+    if (!body && !attachments.length) return;
     setSending(true);
     try {
-      await post(`/api/conversations/${id}/messages`, { body });
+      await post(`/api/conversations/${id}/messages`, { body, images: attachments });
       setText('');
+      setAttachments([]);
       await load();
     } catch (err: any) {
       notify(err.message);
@@ -244,10 +265,20 @@ export default function ChatScreen() {
             ) : (
               messages.map((m) => {
                 const mine = Number(m.sender_id) === me;
+                const photos = parseImages(m.images);
                 return (
                   <View key={m.id} style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
                     <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                      <Text style={styles.bubbleText}>{m.body}</Text>
+                      {photos.length > 0 && (
+                        <View style={styles.bubblePhotos}>
+                          {photos.map((p, i) => (
+                            <TouchableOpacity key={`${p}-${i}`} onPress={() => setViewer({ photos, index: i })}>
+                              <Image source={{ uri: p }} style={styles.bubblePhoto} resizeMode="cover" />
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                      {!!m.body && <Text style={styles.bubbleText}>{m.body}</Text>}
                       <Text style={styles.bubbleTime}>{new Date(m.created_at).toLocaleString('th-TH')}</Text>
                     </View>
                   </View>
@@ -256,8 +287,25 @@ export default function ChatScreen() {
             )}
           </ScrollView>
 
+          {/* Photos picked but not sent yet */}
+          {attachments.length > 0 && (
+            <ScrollView horizontal style={{ flexGrow: 0 }} contentContainerStyle={styles.pending}>
+              {attachments.map((p, i) => (
+                <View key={`${p}-${i}`}>
+                  <Image source={{ uri: resolveImage(p) }} style={styles.pendingPhoto} />
+                  <TouchableOpacity style={styles.pendingRemove} onPress={() => setAttachments((prev) => prev.filter((_, k) => k !== i))}>
+                    <Text style={styles.pendingRemoveText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
           {/* Composer */}
           <View style={styles.composer}>
+            <TouchableOpacity style={styles.attachBtn} onPress={attachPhotos} disabled={uploading || attachments.length >= MAX_CHAT_PHOTOS}>
+              {uploading ? <ActivityIndicator color="#fff" /> : <Text style={styles.attachText}>📷</Text>}
+            </TouchableOpacity>
             <TextInput
               style={styles.composerInput}
               placeholder="พิมพ์ข้อความ…"
@@ -267,12 +315,18 @@ export default function ChatScreen() {
               onSubmitEditing={sendMessage}
               returnKeyType="send"
             />
-            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || !text.trim()}>
+            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage} disabled={sending || uploading || (!text.trim() && !attachments.length)}>
               {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendText}>ส่ง</Text>}
             </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
+      <PhotoViewer
+        photos={viewer?.photos ?? []}
+        index={viewer?.index ?? null}
+        onChange={(index) => setViewer((v) => (v ? { ...v, index } : v))}
+        onClose={() => setViewer(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -319,6 +373,14 @@ const styles = StyleSheet.create({
   bubbleText: { color: '#fff', fontSize: 14, lineHeight: 19 },
   bubbleTime: { color: 'rgba(255,255,255,0.55)', fontSize: 10, marginTop: 4, textAlign: 'right' },
 
+  bubblePhotos: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
+  bubblePhoto: { width: 120, height: 90, borderRadius: 8, backgroundColor: '#000' },
+  pending: { gap: 8, paddingHorizontal: 12, paddingTop: 10 },
+  pendingPhoto: { width: 72, height: 54, borderRadius: 6, backgroundColor: '#1E1E1E' },
+  pendingRemove: { position: 'absolute', right: 2, top: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
+  pendingRemoveText: { color: '#fff', fontSize: 10, fontWeight: '900' },
+  attachBtn: { width: 44, borderRadius: 22, borderWidth: 1, borderColor: C.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  attachText: { fontSize: 18 },
   composer: { flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: C.border },
   composerInput: { flex: 1, backgroundColor: C.input, borderWidth: 1, borderColor: '#2A2A2A', color: '#fff', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
   sendBtn: { backgroundColor: C.red, borderRadius: 20, paddingHorizontal: 18, justifyContent: 'center' },

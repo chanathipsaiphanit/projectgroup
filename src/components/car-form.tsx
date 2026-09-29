@@ -1,8 +1,7 @@
 import { Field, Heading, Pill, uiStyles } from '@/components/form-ui';
-import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
-import { authHeaders, C, CAR_TYPES, Car, FUELS, notify, resolveImage, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
-import * as ImagePicker from 'expo-image-picker';
+import { C, CAR_TYPES, Car, FUELS, notify, resolveImage, storedImagePath, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
+import { pickAndUploadPhotos } from '@/lib/photos';
 import { useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -21,8 +20,11 @@ export type CarPayload = {
   fuel_economy: number | null;
   color: string;
   image: string;
+  images: string[];
   description: string;
 };
+
+const MAX_PHOTOS = 10;
 
 type Props = {
   title: string;
@@ -59,46 +61,45 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
     engineCc: str(initial.engineCc),
     fuelEconomy: str(initial.fuelEconomy),
     color: str(initial.color),
-    image: str(initial.image),
     description: str(initial.description),
   });
   const [type, setType] = useState(initial.type || CAR_TYPES[0]);
   const [fuel, setFuel] = useState(initial.fuel || FUELS[0]);
   const [transmission, setTransmission] = useState(initial.transmission || TRANSMISSIONS[0]);
   const [saving, setSaving] = useState(false);
+  // Stored paths (/uploads/...) or outside URLs; the first one is the cover photo
+  const [photos, setPhotos] = useState<string[]>(() =>
+    (initial.images?.length ? initial.images : initial.image ? [initial.image] : []).map(storedImagePath)
+  );
   const [uploading, setUploading] = useState(false);
   const [showUrl, setShowUrl] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState('');
   const { user } = useAuth();
 
   const set = (key: keyof typeof f) => (value: string) => setF((prev) => ({ ...prev, [key]: value }));
 
-  // Pick a photo from the device and upload it; the form keeps the returned /uploads/... path
-  const pickPhoto = async () => {
-    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, base64: true });
-    if (picked.canceled || !picked.assets?.length) return;
-    const asset = picked.assets[0];
-    // Web gives a data: URI instead of the base64 field
-    const dataUri = asset.uri.startsWith('data:') ? asset.uri : '';
-    const data = asset.base64 || dataUri.split(',')[1];
-    const mimeType = asset.mimeType || dataUri.slice(5, dataUri.indexOf(';')) || 'image/jpeg';
-    if (!data) return notify('อ่านไฟล์รูปไม่สำเร็จ');
-
+  const addPhotos = async () => {
     setUploading(true);
     try {
-      const res = await fetch(api('/api/upload'), {
-        method: 'POST',
-        headers: authHeaders(user?.token),
-        body: JSON.stringify({ data, mimeType }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'อัปโหลดรูปไม่สำเร็จ');
-      set('image')(json.path);
+      const added = await pickAndUploadPhotos(user?.token, MAX_PHOTOS - photos.length);
+      setPhotos((prev) => [...prev, ...added].slice(0, MAX_PHOTOS));
     } catch (err: any) {
       notify(err.message || 'อัปโหลดรูปไม่สำเร็จ');
     } finally {
       setUploading(false);
     }
   };
+
+  const addPhotoUrl = () => {
+    const url = photoUrl.trim();
+    if (!url) return;
+    if (photos.length >= MAX_PHOTOS) return notify(`ใส่รูปได้สูงสุด ${MAX_PHOTOS} รูป`);
+    setPhotos((prev) => [...prev, url]);
+    setPhotoUrl('');
+  };
+
+  const removePhoto = (i: number) => setPhotos((prev) => prev.filter((_, k) => k !== i));
+  const makeCover = (i: number) => setPhotos((prev) => [prev[i], ...prev.filter((_, k) => k !== i)]);
 
   const handleSubmit = async () => {
     if (!f.name.trim() || !f.model.trim()) return notify('กรุณากรอกชื่อรถและรุ่น');
@@ -124,7 +125,8 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
         engine_cc: fuel === 'EV' ? null : numOrNull(f.engineCc),
         fuel_economy: fuel === 'EV' ? null : numOrNull(f.fuelEconomy),
         color: f.color.trim(),
-        image: f.image.trim(),
+        image: photos[0] ?? '',
+        images: photos,
         description: f.description.trim(),
       });
     } catch (err: any) {
@@ -185,36 +187,46 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
       </View>
 
       <Heading style={styles.section} th="รูปและคำอธิบาย" en="Listing" />
-      <Text style={uiStyles.sectionLabel}>รูปรถ</Text>
-      <View style={styles.photoRow}>
-        <View style={styles.photoBox}>
-          {f.image ? (
-            <Image source={{ uri: resolveImage(f.image) }} style={styles.photo} resizeMode="cover" />
-          ) : (
-            <Text style={styles.photoEmpty}>ยังไม่มีรูป</Text>
-          )}
-        </View>
-        <View style={{ flex: 1, gap: 8 }}>
-          <TouchableOpacity style={uiStyles.outlineBtn} onPress={pickPhoto} disabled={uploading}>
+      <Text style={uiStyles.sectionLabel}>{`รูปรถ (${photos.length}/${MAX_PHOTOS}) · รูปแรกคือรูปหน้าปก แตะรูปอื่นเพื่อตั้งเป็นหน้าปก`}</Text>
+      <View style={styles.photoGrid}>
+        {photos.map((p, i) => (
+          <TouchableOpacity key={`${p}-${i}`} style={styles.photoBox} onPress={() => makeCover(i)}>
+            <Image source={{ uri: resolveImage(p) }} style={styles.photo} resizeMode="cover" />
+            {i === 0 && (
+              <View style={styles.coverTag}>
+                <Text style={styles.coverTagText}>หน้าปก</Text>
+              </View>
+            )}
+            <TouchableOpacity style={styles.removeBtn} onPress={() => removePhoto(i)}>
+              <Text style={styles.removeText}>✕</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
+        {photos.length < MAX_PHOTOS && (
+          <TouchableOpacity style={[styles.photoBox, styles.addBox]} onPress={addPhotos} disabled={uploading}>
             {uploading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={uiStyles.outlineBtnText}>{f.image ? 'เปลี่ยนรูป' : 'เลือกรูปจากเครื่อง'}</Text>
+              <>
+                <Text style={styles.addPlus}>＋</Text>
+                <Text style={styles.addText}>เพิ่มรูป</Text>
+              </>
             )}
           </TouchableOpacity>
-          {!!f.image && (
-            <TouchableOpacity onPress={() => set('image')('')}>
-              <Text style={styles.linkText}>ลบรูป</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={() => setShowUrl((v) => !v)}>
-            <Text style={styles.linkText}>{showUrl ? 'ซ่อนช่องลิงก์รูป' : 'หรือวางลิงก์รูปจากเว็บ'}</Text>
+        )}
+      </View>
+      <TouchableOpacity onPress={() => setShowUrl((v) => !v)} style={{ marginBottom: 10 }}>
+        <Text style={styles.linkText}>{showUrl ? 'ซ่อนช่องลิงก์รูป' : 'หรือเพิ่มรูปจากลิงก์เว็บ'}</Text>
+      </TouchableOpacity>
+      {showUrl && (
+        <View style={styles.urlRow}>
+          <Field label="ลิงก์รูปรถ (URL)" placeholder="https://..." value={photoUrl} onChangeText={setPhotoUrl} autoCapitalize="none" />
+          <TouchableOpacity style={[uiStyles.outlineBtn, styles.urlAdd]} onPress={addPhotoUrl}>
+            <Text style={uiStyles.outlineBtnText}>เพิ่ม</Text>
           </TouchableOpacity>
         </View>
-      </View>
-      {showUrl && (
-        <Field label="ลิงก์รูปรถ (URL)" placeholder="https://..." value={f.image} onChangeText={set('image')} autoCapitalize="none" />
       )}
+
       <Field
         label="คำอธิบาย"
         placeholder="สภาพรถ ประวัติการเข้าศูนย์ ของแต่ง ฯลฯ"
@@ -241,10 +253,18 @@ const styles = StyleSheet.create({
   section: { fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 16, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: C.red, paddingLeft: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  photoRow: { flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 14 },
-  photoBox: { width: 160, aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: C.input, borderWidth: 1, borderColor: '#2A2A2A', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
+  photoBox: { width: 132, aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: C.input, borderWidth: 1, borderColor: '#2A2A2A', overflow: 'hidden' },
   photo: { width: '100%', height: '100%' },
-  photoEmpty: { color: '#666', fontSize: 12 },
+  coverTag: { position: 'absolute', left: 0, bottom: 0, backgroundColor: C.red, paddingHorizontal: 6, paddingVertical: 2, borderTopRightRadius: 6 },
+  coverTagText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  removeBtn: { position: 'absolute', right: 4, top: 4, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
+  removeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+  addBox: { alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed', borderColor: '#555' },
+  addPlus: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  addText: { color: C.soft, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  urlRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  urlAdd: { marginBottom: 12, paddingVertical: 12 },
   linkText: { color: C.soft, fontWeight: '700', fontSize: 13 },
   backBtn: { padding: 12, alignItems: 'center', marginTop: 6 },
   backText: { color: '#999', fontWeight: 'bold' },
