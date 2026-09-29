@@ -1,7 +1,10 @@
 import { Field, Heading, Pill, uiStyles } from '@/components/form-ui';
-import { C, CAR_TYPES, Car, FUELS, notify, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
+import { api } from '@/config';
+import { useAuth } from '@/context/auth-context';
+import { authHeaders, C, CAR_TYPES, Car, FUELS, notify, resolveImage, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export type CarPayload = {
   name: string;
@@ -63,8 +66,39 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
   const [fuel, setFuel] = useState(initial.fuel || FUELS[0]);
   const [transmission, setTransmission] = useState(initial.transmission || TRANSMISSIONS[0]);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+  const { user } = useAuth();
 
   const set = (key: keyof typeof f) => (value: string) => setF((prev) => ({ ...prev, [key]: value }));
+
+  // Pick a photo from the device and upload it; the form keeps the returned /uploads/... path
+  const pickPhoto = async () => {
+    const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, base64: true });
+    if (picked.canceled || !picked.assets?.length) return;
+    const asset = picked.assets[0];
+    // Web gives a data: URI instead of the base64 field
+    const dataUri = asset.uri.startsWith('data:') ? asset.uri : '';
+    const data = asset.base64 || dataUri.split(',')[1];
+    const mimeType = asset.mimeType || dataUri.slice(5, dataUri.indexOf(';')) || 'image/jpeg';
+    if (!data) return notify('อ่านไฟล์รูปไม่สำเร็จ');
+
+    setUploading(true);
+    try {
+      const res = await fetch(api('/api/upload'), {
+        method: 'POST',
+        headers: authHeaders(user?.token),
+        body: JSON.stringify({ data, mimeType }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'อัปโหลดรูปไม่สำเร็จ');
+      set('image')(json.path);
+    } catch (err: any) {
+      notify(err.message || 'อัปโหลดรูปไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!f.name.trim() || !f.model.trim()) return notify('กรุณากรอกชื่อรถและรุ่น');
@@ -151,7 +185,36 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
       </View>
 
       <Heading style={styles.section} th="รูปและคำอธิบาย" en="Listing" />
-      <Field label="ลิงก์รูปรถ (URL)" placeholder="https://..." value={f.image} onChangeText={set('image')} autoCapitalize="none" />
+      <Text style={uiStyles.sectionLabel}>รูปรถ</Text>
+      <View style={styles.photoRow}>
+        <View style={styles.photoBox}>
+          {f.image ? (
+            <Image source={{ uri: resolveImage(f.image) }} style={styles.photo} resizeMode="cover" />
+          ) : (
+            <Text style={styles.photoEmpty}>ยังไม่มีรูป</Text>
+          )}
+        </View>
+        <View style={{ flex: 1, gap: 8 }}>
+          <TouchableOpacity style={uiStyles.outlineBtn} onPress={pickPhoto} disabled={uploading}>
+            {uploading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={uiStyles.outlineBtnText}>{f.image ? 'เปลี่ยนรูป' : 'เลือกรูปจากเครื่อง'}</Text>
+            )}
+          </TouchableOpacity>
+          {!!f.image && (
+            <TouchableOpacity onPress={() => set('image')('')}>
+              <Text style={styles.linkText}>ลบรูป</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => setShowUrl((v) => !v)}>
+            <Text style={styles.linkText}>{showUrl ? 'ซ่อนช่องลิงก์รูป' : 'หรือวางลิงก์รูปจากเว็บ'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      {showUrl && (
+        <Field label="ลิงก์รูปรถ (URL)" placeholder="https://..." value={f.image} onChangeText={set('image')} autoCapitalize="none" />
+      )}
       <Field
         label="คำอธิบาย"
         placeholder="สภาพรถ ประวัติการเข้าศูนย์ ของแต่ง ฯลฯ"
@@ -161,7 +224,7 @@ export default function CarForm({ title, titleEn, submitLabel, initial = {}, onS
         style={{ minHeight: 90, textAlignVertical: 'top' }}
       />
 
-      <TouchableOpacity style={[uiStyles.primaryBtn, { marginTop: 10 }]} onPress={handleSubmit} disabled={saving}>
+      <TouchableOpacity style={[uiStyles.primaryBtn, { marginTop: 10 }]} onPress={handleSubmit} disabled={saving || uploading}>
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={uiStyles.primaryBtnText}>{submitLabel}</Text>}
       </TouchableOpacity>
       <TouchableOpacity style={styles.backBtn} onPress={onCancel}>
@@ -178,6 +241,11 @@ const styles = StyleSheet.create({
   section: { fontSize: 15, fontWeight: '800', color: '#fff', marginTop: 16, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: C.red, paddingLeft: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  photoRow: { flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 14 },
+  photoBox: { width: 160, aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: C.input, borderWidth: 1, borderColor: '#2A2A2A', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  photo: { width: '100%', height: '100%' },
+  photoEmpty: { color: '#666', fontSize: 12 },
+  linkText: { color: C.soft, fontWeight: '700', fontSize: 13 },
   backBtn: { padding: 12, alignItems: 'center', marginTop: 6 },
   backText: { color: '#999', fontWeight: 'bold' },
 });

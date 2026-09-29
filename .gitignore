@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# photos uploaded by sellers live on the server only
+backend/public/uploads/
