@@ -5,6 +5,7 @@ import { useAuth } from '@/context/auth-context';
 import { authHeaders, C, formatTHB, notify, parseImages, resolveImage } from '@/lib/cars';
 import { pickAndUploadPhotos } from '@/lib/photos';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -61,6 +62,7 @@ const tomorrow = () => {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
 
@@ -184,7 +186,7 @@ export default function ChatScreen() {
         <View style={styles.inner}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => goBack()}>
               <Text style={styles.back}>{'←'}</Text>
             </TouchableOpacity>
             <TouchableOpacity

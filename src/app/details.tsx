@@ -18,6 +18,7 @@ import {
   thType,
 } from '@/lib/cars';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,6 +38,7 @@ const WIDE_BREAKPOINT = 720;
 
 export default function CarDetailScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const params = useLocalSearchParams<{ car?: string; id?: string }>();
   const { user } = useAuth();
   const { width } = useWindowDimensions();
@@ -112,7 +114,7 @@ export default function CarDetailScreen() {
       const data = await res.json();
       if (res.ok && data.success) {
         notify('ลบรถเรียบร้อยแล้ว');
-        router.back();
+        goBack();
       } else {
         notify(data.error || 'ลบรถไม่สำเร็จ');
       }
@@ -155,7 +157,7 @@ export default function CarDetailScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.pageInner}>
-        <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backLink} onPress={() => goBack()}>
           <Text style={styles.backLinkText}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
 

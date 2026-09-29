@@ -3,6 +3,7 @@ import { useAuth } from '@/context/auth-context';
 import { Heading } from '@/components/form-ui';
 import { authHeaders, C, formatTHB, resolveImage } from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -23,6 +24,7 @@ type ConversationRow = {
 
 export default function InboxScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const { user } = useAuth();
   const [rows, setRows] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +61,7 @@ export default function InboxScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
+        <TouchableOpacity onPress={() => goBack()} style={{ marginBottom: 12 }}>
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
         <Heading style={styles.title} th="ข้อความและนัดหมาย" en="Messages" />

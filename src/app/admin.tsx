@@ -3,6 +3,7 @@ import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import { authHeaders, C, Car, confirmAction, formatTHB, normalizeCar, notify } from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useGoBack } from '@/lib/navigation';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -22,6 +23,7 @@ const ROLES = [
 
 export default function AdminScreen() {
   const router = useRouter();
+  const goBack = useGoBack();
   const { user } = useAuth();
   const [tab, setTab] = useState<'cars' | 'users'>('cars');
   const [stats, setStats] = useState<Stats | null>(null);
@@ -107,7 +109,7 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page}>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
+        <TouchableOpacity onPress={() => goBack()} style={{ marginBottom: 12 }}>
           <Text style={styles.back}>{'← ย้อนกลับ'}</Text>
         </TouchableOpacity>
         <Heading style={styles.title} th="จัดการระบบ" en="Admin" />
