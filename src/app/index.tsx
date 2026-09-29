@@ -67,6 +67,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
+  // Phone-sized screens stack the header and the sort bar instead of squeezing them into one row
+  const narrow = width < 640;
 
   const contentWidth = Math.min(width, MAX_CONTENT_WIDTH) - 40;
   const columns = contentWidth >= 1000 ? 4 : contentWidth >= 720 ? 3 : contentWidth >= 460 ? 2 : 1;
@@ -198,7 +200,7 @@ export default function HomeScreen() {
                 <Text style={styles.brandTagline}>ตลาดรถมือสอง · Used Cars</Text>
               </View>
 
-              <View style={styles.nav}>
+              <View style={[styles.nav, narrow && styles.navNarrow]}>
                 <TouchableOpacity style={styles.navLink} onPress={() => router.push('/ai-advisor')}>
                   <Text style={styles.navLinkText}>แนะนำรถให้คุณ</Text>
                 </TouchableOpacity>
@@ -226,7 +228,7 @@ export default function HomeScreen() {
                     <Text style={styles.navLinkText}>เข้าสู่ระบบ</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity style={styles.sellBtn} onPress={goSell}>
+                <TouchableOpacity style={[styles.sellBtn, narrow && styles.sellBtnNarrow]} onPress={goSell}>
                   <Text style={styles.sellBtnText}>+ ลงขายรถ</Text>
                 </TouchableOpacity>
               </View>
@@ -326,14 +328,14 @@ export default function HomeScreen() {
               <Heading style={styles.sectionTitle} th="รถมือสองทั้งหมด" en="Used Cars" />
               <Text style={styles.countText}>{`พบ ${filteredCars.length} คัน · แตะที่รถเพื่อดูรายละเอียดและติดต่อผู้ขาย`}</Text>
             </View>
-            <View style={styles.resultsActions}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+            <View style={[styles.resultsActions, narrow && styles.resultsActionsNarrow]}>
+              <ScrollView horizontal style={{ flexShrink: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
                 {SORTS.map((s) => (
                   <Chip key={s.key} label={s.label} active={sort === s.key} onPress={() => setSort(s.key)} />
                 ))}
               </ScrollView>
               <TouchableOpacity
-                style={[styles.compareToggle, compareMode && styles.compareToggleActive]}
+                style={[styles.compareToggle, compareMode && styles.compareToggleActive, narrow && { alignSelf: 'flex-start' }]}
                 onPress={() => (compareMode ? exitCompare() : setCompareMode(true))}
               >
                 <Text style={styles.compareToggleText}>{compareMode ? 'ยกเลิกเปรียบเทียบ' : '⇄ เปรียบเทียบรถ'}</Text>
@@ -438,11 +440,13 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   brandTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 1 },
   brandTagline: { fontSize: 12, color: C.red, fontWeight: '700', marginTop: 2 },
-  nav: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 },
+  nav: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, flexShrink: 1 },
+  navNarrow: { width: '100%', marginLeft: -10 },
   navLink: { paddingHorizontal: 10, paddingVertical: 8 },
   navLinkText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   navLinkMuted: { color: C.muted, fontWeight: '600', fontSize: 13 },
   sellBtn: { backgroundColor: C.red, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 8, marginLeft: 6 },
+  sellBtnNarrow: { marginLeft: 10, marginTop: 4 },
   sellBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   roleText: { color: C.muted, fontSize: 12, marginTop: 4 },
 
@@ -485,6 +489,7 @@ const styles = StyleSheet.create({
 
   resultsHead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: 10, marginTop: 24, marginBottom: 14 },
   resultsActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  resultsActionsNarrow: { width: '100%', flexDirection: 'column', alignItems: 'stretch' },
   sectionTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
   countText: { fontSize: 12, color: C.muted, marginTop: 4 },
   compareToggle: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: C.borderStrong },
