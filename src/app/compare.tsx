@@ -2,6 +2,7 @@ import { api } from '@/config';
 import { Heading } from '@/components/form-ui';
 import { C, formatKm, formatTHB, notify, resolveImage, thFuel, thTransmission, thType } from '@/lib/cars';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsNarrow } from '@/lib/layout';
 import { useGoBack } from '@/lib/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -66,6 +67,7 @@ const DIM_TH: Record<DimKey, string> = {
 export default function CompareScreen() {
   const router = useRouter();
   const goBack = useGoBack();
+  const narrow = useIsNarrow(720);
   const params = useLocalSearchParams<{ ids?: string }>();
   const ids = useMemo(() => (params.ids || '').split(',').filter(Boolean), [params.ids]);
 
@@ -165,90 +167,170 @@ export default function CompareScreen() {
               })}
             </View>
 
-            {/* Comparison table */}
-            <ScrollView horizontal showsHorizontalScrollIndicator>
-              <View style={styles.table}>
-                {/* Header */}
-                <View style={styles.tr}>
-                  <View style={[styles.labelCell, { justifyContent: 'flex-end' }]} />
-                  {data.cars.map((c) => (
+            {/* Comparison: a wide table on desktop, stacked blocks on phones (no sideways scrolling) */}
+            {narrow ? (
+              <View>
+                <View style={styles.carGrid}>
+                  {data.cars.map((c, i) => (
                     <TouchableOpacity
                       key={c.id}
-                      style={[styles.headCell, c.id === data.bestOverallId && styles.headCellBest]}
+                      style={[styles.carTile, c.id === data.bestOverallId && styles.headCellBest]}
                       onPress={() => router.push({ pathname: '/details', params: { id: String(c.id) } })}
                     >
                       <View style={styles.headImg}>
                         {c.image ? <Image source={{ uri: resolveImage(c.image) }} style={styles.img} /> : <Text style={styles.thumbText}>NOON</Text>}
                       </View>
-                      <Text style={styles.headName} numberOfLines={2}>{c.name}</Text>
+                      <Text style={styles.headName} numberOfLines={2}>{`${i + 1}. ${c.name}`}</Text>
                       {c.id === data.bestOverallId && <Text style={styles.bestTag}>★ ดีที่สุดโดยรวม</Text>}
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                {specRows.map(([label, get]) => (
-                  <View key={label} style={styles.tr}>
-                    <Text style={[styles.labelCell, styles.labelText]}>{label}</Text>
-                    {data.cars.map((c) => (
-                      <Text key={c.id} style={[styles.cell, styles.cellText]}>{get(c)}</Text>
-                    ))}
-                  </View>
-                ))}
-
-                <Heading style={styles.groupTitle} th="คะแนนแต่ละด้าน (0–100)" en="Scores" />
-                {data.dimensions.map((d) => (
-                  <View key={d.key} style={styles.tr}>
-                    <Text style={[styles.labelCell, styles.labelText, d.weight === 0 && { opacity: 0.4 }]}>{DIM_TH[d.key] ?? d.label}</Text>
-                    {data.cars.map((c) => {
-                      const s = c.scores[d.key];
-                      const win = data.winners[d.key] === c.id;
-                      return (
-                        <View key={c.id} style={styles.cell}>
-                          {s == null ? (
-                            <Text style={styles.cellMuted}>ไม่มีข้อมูล</Text>
-                          ) : (
-                            <>
-                              <Text style={[styles.cellText, win && styles.winText]}>{win ? '★ ' : ''}{s}</Text>
-                              <View style={styles.barTrack}>
-                                <View style={[styles.barFill, { width: `${s}%` }, !win && { backgroundColor: '#555' }]} />
-                              </View>
-                            </>
-                          )}
+                <View style={styles.panel}>
+                  <Heading style={styles.blockTitle} th="ข้อมูลรถ" en="Specs" />
+                  {specRows.map(([label, get]) => (
+                    <View key={label} style={styles.attr}>
+                      <Text style={styles.attrLabel}>{label}</Text>
+                      {data.cars.map((c, i) => (
+                        <View key={c.id} style={styles.attrRow}>
+                          <Text style={styles.attrCar} numberOfLines={1}>{`${i + 1}. ${c.name}`}</Text>
+                          <Text style={styles.attrValue}>{get(c)}</Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                ))}
+                      ))}
+                    </View>
+                  ))}
+                </View>
 
-                <View style={[styles.tr, styles.overallRow]}>
-                  <Text style={[styles.labelCell, styles.labelText, { color: '#fff' }]}>คะแนนรวม</Text>
-                  {data.cars.map((c) => (
-                    <Text key={c.id} style={[styles.cell, styles.overallText, c.id === data.bestOverallId && { color: C.red }]}>
-                      {c.overall ?? '—'}
-                    </Text>
+                <View style={styles.panel}>
+                  <Heading style={styles.blockTitle} th="คะแนนแต่ละด้าน (0–100)" en="Scores" />
+                  {[...data.dimensions, { key: 'overall' as const, label: 'คะแนนรวม', weight: 1 }].map((d) => (
+                    <View key={d.key} style={styles.attr}>
+                      <Text style={[styles.attrLabel, d.key === 'overall' && { color: '#fff' }]}>
+                        {d.key === 'overall' ? 'คะแนนรวม' : DIM_TH[d.key] ?? d.label}
+                      </Text>
+                      {data.cars.map((c, i) => {
+                        const s = d.key === 'overall' ? c.overall : c.scores[d.key];
+                        const win = d.key === 'overall' ? c.id === data.bestOverallId : data.winners[d.key] === c.id;
+                        return (
+                          <View key={c.id} style={styles.attrRow}>
+                            <Text style={styles.attrCar} numberOfLines={1}>{`${i + 1}. ${c.name}`}</Text>
+                            <View style={styles.attrScore}>
+                              <View style={styles.barTrackWide}>
+                                <View style={[styles.barFill, { width: `${s ?? 0}%` }, !win && { backgroundColor: '#555' }]} />
+                              </View>
+                              <Text style={[styles.attrValue, win && styles.winText]}>{s == null ? '—' : `${win ? '★ ' : ''}${s}`}</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
                   ))}
                 </View>
 
                 {data.priceModel?.used && (
-                  <>
-                    <Heading style={styles.groupTitle} th="ราคาตลาดโดยประมาณ" en="Market Price" />
-                    <View style={styles.tr}>
-                      <Text style={[styles.labelCell, styles.labelText]}>ราคาที่เหมาะสม</Text>
-                      {data.cars.map((c) => (
-                        <View key={c.id} style={styles.cell}>
-                          <Text style={styles.cellText}>{formatTHB(c.fairPrice)}</Text>
+                  <View style={styles.panel}>
+                    <Heading style={styles.blockTitle} th="ราคาตลาดโดยประมาณ" en="Market Price" />
+                    {data.cars.map((c, i) => (
+                      <View key={c.id} style={styles.attrRow}>
+                        <Text style={styles.attrCar} numberOfLines={1}>{`${i + 1}. ${c.name}`}</Text>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.attrValue}>{formatTHB(c.fairPrice)}</Text>
                           {c.dealLabel && (
                             <Text style={[styles.dealText, { color: DEAL_COLOR[c.dealLabel] }]}>
                               {`${DEAL_TH[c.dealLabel] ?? c.dealLabel}${c.dealPct ? ` (${c.dealPct > 0 ? '-' : '+'}${Math.abs(c.dealPct)}%)` : ''}`}
                             </Text>
                           )}
                         </View>
-                      ))}
-                    </View>
-                  </>
+                      </View>
+                    ))}
+                  </View>
                 )}
               </View>
-            </ScrollView>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator>
+                <View style={styles.table}>
+                  {/* Header */}
+                  <View style={styles.tr}>
+                    <View style={[styles.labelCell, { justifyContent: 'flex-end' }]} />
+                    {data.cars.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.headCell, c.id === data.bestOverallId && styles.headCellBest]}
+                        onPress={() => router.push({ pathname: '/details', params: { id: String(c.id) } })}
+                      >
+                        <View style={styles.headImg}>
+                          {c.image ? <Image source={{ uri: resolveImage(c.image) }} style={styles.img} /> : <Text style={styles.thumbText}>NOON</Text>}
+                        </View>
+                        <Text style={styles.headName} numberOfLines={2}>{c.name}</Text>
+                        {c.id === data.bestOverallId && <Text style={styles.bestTag}>★ ดีที่สุดโดยรวม</Text>}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {specRows.map(([label, get]) => (
+                    <View key={label} style={styles.tr}>
+                      <Text style={[styles.labelCell, styles.labelText]}>{label}</Text>
+                      {data.cars.map((c) => (
+                        <Text key={c.id} style={[styles.cell, styles.cellText]}>{get(c)}</Text>
+                      ))}
+                    </View>
+                  ))}
+
+                  <Heading style={styles.groupTitle} th="คะแนนแต่ละด้าน (0–100)" en="Scores" />
+                  {data.dimensions.map((d) => (
+                    <View key={d.key} style={styles.tr}>
+                      <Text style={[styles.labelCell, styles.labelText, d.weight === 0 && { opacity: 0.4 }]}>{DIM_TH[d.key] ?? d.label}</Text>
+                      {data.cars.map((c) => {
+                        const s = c.scores[d.key];
+                        const win = data.winners[d.key] === c.id;
+                        return (
+                          <View key={c.id} style={styles.cell}>
+                            {s == null ? (
+                              <Text style={styles.cellMuted}>ไม่มีข้อมูล</Text>
+                            ) : (
+                              <>
+                                <Text style={[styles.cellText, win && styles.winText]}>{win ? '★ ' : ''}{s}</Text>
+                                <View style={styles.barTrack}>
+                                  <View style={[styles.barFill, { width: `${s}%` }, !win && { backgroundColor: '#555' }]} />
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+
+                  <View style={[styles.tr, styles.overallRow]}>
+                    <Text style={[styles.labelCell, styles.labelText, { color: '#fff' }]}>คะแนนรวม</Text>
+                    {data.cars.map((c) => (
+                      <Text key={c.id} style={[styles.cell, styles.overallText, c.id === data.bestOverallId && { color: C.red }]}>
+                        {c.overall ?? '—'}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {data.priceModel?.used && (
+                    <>
+                      <Heading style={styles.groupTitle} th="ราคาตลาดโดยประมาณ" en="Market Price" />
+                      <View style={styles.tr}>
+                        <Text style={[styles.labelCell, styles.labelText]}>ราคาที่เหมาะสม</Text>
+                        {data.cars.map((c) => (
+                          <View key={c.id} style={styles.cell}>
+                            <Text style={styles.cellText}>{formatTHB(c.fairPrice)}</Text>
+                            {c.dealLabel && (
+                              <Text style={[styles.dealText, { color: DEAL_COLOR[c.dealLabel] }]}>
+                                {`${DEAL_TH[c.dealLabel] ?? c.dealLabel}${c.dealPct ? ` (${c.dealPct > 0 ? '-' : '+'}${Math.abs(c.dealPct)}%)` : ''}`}
+                              </Text>
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    </>
+                  )}
+                </View>
+              </ScrollView>
+            )}
 
             {/* Similarity */}
             {data.similarity.length > 0 && (
@@ -322,6 +404,15 @@ const styles = StyleSheet.create({
   overallText: { color: '#fff', fontSize: 20, fontWeight: '900' },
   dealText: { fontSize: 12, fontWeight: '800', marginTop: 4 },
 
+  carGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  carTile: { width: '47%', flexGrow: 1, padding: 10, borderRadius: 10, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
+  attr: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1E1E1E' },
+  attrLabel: { color: C.muted, fontSize: 12, fontWeight: '800', marginBottom: 6 },
+  attrRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 3 },
+  attrCar: { color: C.soft, fontSize: 13, flex: 1 },
+  attrValue: { color: '#fff', fontSize: 13, fontWeight: '700', textAlign: 'right' },
+  attrScore: { flexDirection: 'row', alignItems: 'center', gap: 8, width: 140, justifyContent: 'flex-end' },
+  barTrackWide: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#262626', overflow: 'hidden' },
   simRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1E1E1E', gap: 10 },
   simNames: { color: C.soft, fontSize: 13, flex: 1 },
   simPct: { color: '#fff', fontWeight: '900', fontSize: 15 },

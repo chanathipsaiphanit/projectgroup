@@ -291,7 +291,7 @@ export default function ChatScreen() {
 
           {/* Photos picked but not sent yet */}
           {attachments.length > 0 && (
-            <ScrollView horizontal style={{ flexGrow: 0 }} contentContainerStyle={styles.pending}>
+            <View style={styles.pending}>
               {attachments.map((p, i) => (
                 <View key={`${p}-${i}`}>
                   <Image source={{ uri: resolveImage(p) }} style={styles.pendingPhoto} />
@@ -300,7 +300,7 @@ export default function ChatScreen() {
                   </TouchableOpacity>
                 </View>
               ))}
-            </ScrollView>
+            </View>
           )}
 
           {/* Composer */}
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
 
   bubblePhotos: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 },
   bubblePhoto: { width: 120, height: 90, borderRadius: 8, backgroundColor: '#000' },
-  pending: { gap: 8, paddingHorizontal: 12, paddingTop: 10 },
+  pending: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingTop: 10 },
   pendingPhoto: { width: 72, height: 54, borderRadius: 6, backgroundColor: '#1E1E1E' },
   pendingRemove: { position: 'absolute', right: 2, top: 2, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
   pendingRemoveText: { color: '#fff', fontSize: 10, fontWeight: '900' },

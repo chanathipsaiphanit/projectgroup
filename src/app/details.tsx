@@ -186,13 +186,13 @@ export default function CarDetailScreen() {
               )}
             </View>
             {photos.length > 1 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
+              <View style={styles.thumbRow}>
                 {photos.map((p, i) => (
                   <TouchableOpacity key={`${p}-${i}`} onPress={() => setPhotoIndex(i)} style={[styles.thumb, i === shown && styles.thumbActive]}>
                     <Image source={{ uri: p }} style={styles.carImg} resizeMode="cover" />
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             )}
             {photos.length > 0 && <Text style={styles.galleryHint}>แตะที่รูปเพื่อดูแบบเต็มจอ</Text>}
           </View>
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
   galleryArrowText: { color: '#fff', fontSize: 24, fontWeight: '700', marginTop: -2 },
   galleryCount: { position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   galleryCountText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  thumbRow: { gap: 8 },
+  thumbRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   thumb: { width: 80, height: 60, borderRadius: 6, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: '#1E1E1E' },
   thumbActive: { borderColor: C.red },
   galleryHint: { color: C.muted, fontSize: 11 },
