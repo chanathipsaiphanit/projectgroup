@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -9,10 +10,15 @@ const ai = require('./ai');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '12mb' })); // photos arrive as base64 in JSON
 
 // Car photos: GET /cars/<file>.jpg serves backend/public/cars/<file>.jpg
 app.use('/cars', express.static(path.join(__dirname, 'public', 'cars'), { maxAge: '7d' }));
+
+// Photos uploaded by sellers: GET /uploads/<file>
+const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mysecretkey';
 
@@ -176,6 +182,26 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
   } catch (err) {
     console.error('Update error:', err.message);
     fail(res, 500, err.message);
+  }
+});
+
+// Car photo upload: body { data: <base64>, mimeType } -> { path: '/uploads/<file>' }
+const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+app.post('/api/upload', verifyToken, requireRole('seller', 'admin'), async (req, res) => {
+  try {
+    const ext = IMAGE_TYPES[req.body.mimeType];
+    if (!ext) return fail(res, 400, 'รองรับเฉพาะไฟล์รูป JPG, PNG หรือ WEBP');
+    const buffer = Buffer.from(String(req.body.data || ''), 'base64');
+    if (!buffer.length) return fail(res, 400, 'ไม่พบข้อมูลรูป');
+    if (buffer.length > MAX_IMAGE_BYTES) return fail(res, 400, 'รูปใหญ่เกินไป (ไม่เกิน 8 MB)');
+    const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    await fs.promises.writeFile(path.join(UPLOAD_DIR, name), buffer);
+    res.json({ success: true, path: `/uploads/${name}` });
+  } catch (err) {
+    console.error('Upload error:', err.message);
+    fail(res, 500, 'อัปโหลดรูปไม่สำเร็จ');
   }
 });
 
@@ -539,6 +565,38 @@ app.patch('/api/admin/users/:id', adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Admin role error:', err.message);
     fail(res, 500, 'เปลี่ยนสิทธิ์ไม่สำเร็จ');
+  }
+});
+
+// Give a car to a seller (sellerId null = back to the shop)
+async function findSeller(id) {
+  const [rows] = await db.query("SELECT id FROM users WHERE id = ? AND role IN ('seller', 'admin')", [id]);
+  return rows[0] || null;
+}
+
+app.patch('/api/admin/cars/:id/seller', adminOnly, async (req, res) => {
+  try {
+    const sellerId = req.body.sellerId == null ? null : Number(req.body.sellerId);
+    if (sellerId != null && !(await findSeller(sellerId))) return fail(res, 400, 'ไม่พบบัญชีผู้ขายนี้');
+    const [result] = await db.query('UPDATE Inventory SET seller_id = ? WHERE id = ?', [sellerId, req.params.id]);
+    if (!result.affectedRows) return fail(res, 404, 'ไม่พบรถคันนี้');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Assign seller error:', err.message);
+    fail(res, 500, 'เปลี่ยนผู้ขายไม่สำเร็จ');
+  }
+});
+
+// Give every car that has no seller yet to one seller
+app.post('/api/admin/cars/assign-unowned', adminOnly, async (req, res) => {
+  try {
+    const sellerId = Number(req.body.sellerId);
+    if (!(await findSeller(sellerId))) return fail(res, 400, 'ไม่พบบัญชีผู้ขายนี้');
+    const [result] = await db.query('UPDATE Inventory SET seller_id = ? WHERE seller_id IS NULL', [sellerId]);
+    res.json({ success: true, updated: result.affectedRows });
+  } catch (err) {
+    console.error('Assign unowned error:', err.message);
+    fail(res, 500, 'เปลี่ยนผู้ขายไม่สำเร็จ');
   }
 });
 
