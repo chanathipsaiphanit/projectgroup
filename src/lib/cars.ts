@@ -1,4 +1,4 @@
-import { api } from '@/config';
+import { api, API_BASE_URL } from '@/config';
 import { Alert, Platform } from 'react-native';
 
 export const CAR_TYPES = ['Sedan', 'SUV', 'Sports Car', 'Hatchback', 'Pickup'];
@@ -15,16 +15,36 @@ const toNum = (v: any): number | null => {
 export const resolveImage = (image?: string | null) =>
   typeof image === 'string' && image.startsWith('/') ? api(image) : image ?? '';
 
+// Reverse of resolveImage: keep our own photos as /uploads/... in the database
+export const storedImagePath = (image: string) =>
+  image.startsWith(API_BASE_URL + '/') ? image.slice(API_BASE_URL.length) : image;
+
+// `images` arrives as a JSON string from MySQL, or as an array once normalized
+export function parseImages(value: unknown): string[] {
+  let list = value;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      list = [];
+    }
+  }
+  return Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string' && !!v).map(resolveImage) : [];
+}
+
 // The DB returns snake_case MySQL columns; screens pass cars around in
 // camelCase. This accepts either, so it's safe to call twice.
 export function normalizeCar(item: any) {
+  const photos = parseImages(item.images);
+  if (!photos.length && item.image) photos.push(resolveImage(item.image));
   return {
     id: item.id,
     name: item.name ?? '',
     model: item.model ?? '',
     type: item.type ?? '',
     stock: Number(item.stock ?? 0),
-    image: resolveImage(item.image),
+    image: photos[0] ?? '',
+    images: photos,
     price: Number(item.price ?? 0),
     year: toNum(item.year),
     mileage: toNum(item.mileage),

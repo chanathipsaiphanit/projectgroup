@@ -60,7 +60,22 @@ const canManageCar = (user, car) =>
 // ==========================================
 const TEXT_FIELDS = ['name', 'model', 'type', 'image', 'fuel', 'transmission', 'color', 'description'];
 const NUMBER_FIELDS = ['price', 'stock', 'year', 'mileage', 'seats', 'engine_cc', 'fuel_economy'];
-const CAR_COLUMNS = [...TEXT_FIELDS, ...NUMBER_FIELDS];
+const CAR_COLUMNS = [...TEXT_FIELDS, ...NUMBER_FIELDS, 'images'];
+const MAX_PHOTOS = 10;
+
+// A list of photo paths/URLs from the client -> clean array (max MAX_PHOTOS)
+function readPhotoList(value) {
+  let list = value;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      list = [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((v) => String(v || '').trim()).filter(Boolean).slice(0, MAX_PHOTOS);
+}
 
 // Accepts both lower-case and Capitalized keys (the old client sent both)
 function readCarBody(body = {}) {
@@ -77,6 +92,12 @@ function readCarBody(body = {}) {
   }
   car.price = car.price ?? 0;
   car.stock = car.stock ?? 0;
+
+  // Several photos are stored as a JSON array in `images`; `image` stays the cover photo
+  const photos = readPhotoList(body.images);
+  if (!photos.length && car.image) photos.push(car.image);
+  car.image = photos[0] || '';
+  car.images = JSON.stringify(photos);
   return car;
 }
 
@@ -189,7 +210,8 @@ app.put('/api/inventory/:id', verifyToken, async (req, res) => {
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-app.post('/api/upload', verifyToken, requireRole('seller', 'admin'), async (req, res) => {
+// Any signed-in user can upload: sellers for listings, buyers and sellers for chat photos
+app.post('/api/upload', verifyToken, async (req, res) => {
   try {
     const ext = IMAGE_TYPES[req.body.mimeType];
     if (!ext) return fail(res, 400, 'รองรับเฉพาะไฟล์รูป JPG, PNG หรือ WEBP');
@@ -362,7 +384,7 @@ app.get('/api/conversations', verifyToken, async (req, res) => {
       `SELECT c.id, c.car_id, c.buyer_id, c.seller_id, c.updated_at,
               i.name AS car_name, i.image AS car_image, i.price AS car_price,
               b.username AS buyer_name, s.username AS seller_name,
-              (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+              (SELECT COALESCE(NULLIF(body, ''), '📷 ส่งรูปภาพ') FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message,
               (SELECT COUNT(*) FROM appointments a WHERE a.conversation_id = c.id AND a.status = 'pending') AS pending_appointments
        FROM conversations c
        JOIN Inventory i ON i.id = c.car_id
@@ -385,7 +407,7 @@ app.get('/api/conversations/:id', verifyToken, async (req, res) => {
     if (!conv) return fail(res, 404, 'ไม่พบแชทนี้');
 
     const [messages] = await db.query(
-      'SELECT id, sender_id, body, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC',
+      'SELECT id, sender_id, body, images, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC',
       [conv.id]
     );
     const [appointments] = await db.query(
@@ -406,10 +428,16 @@ app.post('/api/conversations/:id/messages', verifyToken, async (req, res) => {
     const conv = await loadConversation(req.params.id, req.user.id);
     if (!conv) return fail(res, 404, 'ไม่พบแชทนี้');
     const body = String(req.body.body || '').trim();
-    if (!body) return fail(res, 400, 'กรุณาพิมพ์ข้อความ');
+    const photos = readPhotoList(req.body.images);
+    if (!body && !photos.length) return fail(res, 400, 'กรุณาพิมพ์ข้อความหรือเลือกรูป');
     if (body.length > 2000) return fail(res, 400, 'ข้อความยาวเกินไป');
 
-    const [result] = await db.query('INSERT INTO messages (conversation_id, sender_id, body) VALUES (?, ?, ?)', [conv.id, req.user.id, body]);
+    const [result] = await db.query('INSERT INTO messages (conversation_id, sender_id, body, images) VALUES (?, ?, ?, ?)', [
+      conv.id,
+      req.user.id,
+      body,
+      photos.length ? JSON.stringify(photos) : null,
+    ]);
     await touchConversation(conv.id);
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -587,7 +615,26 @@ app.delete('/api/admin/users/:id', adminOnly, async (req, res) => {
   }
 });
 
+// Add columns newer versions need, so updating only means replacing server.js
+async function ensureColumn(table, column, definition) {
+  const [rows] = await db.query(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [column]);
+  if (!rows.length) {
+    await db.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+    console.log(`Added column ${table}.${column}`);
+  }
+}
+
+async function migrate() {
+  try {
+    await ensureColumn('Inventory', 'images', 'TEXT NULL'); // several photos per car (JSON array)
+    await ensureColumn('messages', 'images', 'TEXT NULL'); // photos sent in chat (JSON array)
+  } catch (err) {
+    console.error('Auto-migration failed:', err.message);
+  }
+}
+
 const PORT = process.env.PORT || 3092;
+migrate();
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY) console.log('AI summaries: rule-based (set ANTHROPIC_API_KEY to use Claude)');
