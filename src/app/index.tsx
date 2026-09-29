@@ -2,8 +2,9 @@ import { Heading } from '@/components/form-ui';
 import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import { C, canSell, Car, formatTHB, FUELS, normalizeCar, notify, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
+import { useIsNarrow } from '@/lib/layout';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import {
   Image,
   Platform,
@@ -66,12 +67,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
-  // Phone-sized screens stack the header and the sort bar instead of squeezing them into one row.
-  // The web build pre-renders this page without a screen size, so re-check once it's mounted —
-  // otherwise the pre-rendered phone layout would stick on desktop.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const narrow = !mounted || width < 640;
+  // Phone-sized screens stack the header and the sort bar instead of squeezing them into one row
+  const narrow = useIsNarrow();
 
   const contentWidth = Math.min(width, MAX_CONTENT_WIDTH) - 40;
   const columns = contentWidth >= 1000 ? 4 : contentWidth >= 720 ? 3 : contentWidth >= 460 ? 2 : 1;
