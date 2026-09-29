@@ -568,38 +568,6 @@ app.patch('/api/admin/users/:id', adminOnly, async (req, res) => {
   }
 });
 
-// Give a car to a seller (sellerId null = back to the shop)
-async function findSeller(id) {
-  const [rows] = await db.query("SELECT id FROM users WHERE id = ? AND role IN ('seller', 'admin')", [id]);
-  return rows[0] || null;
-}
-
-app.patch('/api/admin/cars/:id/seller', adminOnly, async (req, res) => {
-  try {
-    const sellerId = req.body.sellerId == null ? null : Number(req.body.sellerId);
-    if (sellerId != null && !(await findSeller(sellerId))) return fail(res, 400, 'ไม่พบบัญชีผู้ขายนี้');
-    const [result] = await db.query('UPDATE Inventory SET seller_id = ? WHERE id = ?', [sellerId, req.params.id]);
-    if (!result.affectedRows) return fail(res, 404, 'ไม่พบรถคันนี้');
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Assign seller error:', err.message);
-    fail(res, 500, 'เปลี่ยนผู้ขายไม่สำเร็จ');
-  }
-});
-
-// Give every car that has no seller yet to one seller
-app.post('/api/admin/cars/assign-unowned', adminOnly, async (req, res) => {
-  try {
-    const sellerId = Number(req.body.sellerId);
-    if (!(await findSeller(sellerId))) return fail(res, 400, 'ไม่พบบัญชีผู้ขายนี้');
-    const [result] = await db.query('UPDATE Inventory SET seller_id = ? WHERE seller_id IS NULL', [sellerId]);
-    res.json({ success: true, updated: result.affectedRows });
-  } catch (err) {
-    console.error('Assign unowned error:', err.message);
-    fail(res, 500, 'เปลี่ยนผู้ขายไม่สำเร็จ');
-  }
-});
-
 // Deleting a user also removes their chats; their cars stay listed under the shop
 app.delete('/api/admin/users/:id', adminOnly, async (req, res) => {
   try {

@@ -29,7 +29,6 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [assigningId, setAssigningId] = useState<Car['id'] | null>(null);
 
   const request = useCallback(
     async (path: string, method = 'GET', body?: object) => {
@@ -89,31 +88,6 @@ export default function AdminScreen() {
       request(`/api/admin/users/${u.id}`, 'DELETE').then(load).catch((e) => notify(e.message))
     , 'ลบ');
 
-  const sellers = users.filter((u) => u.role === 'seller' || u.role === 'admin');
-  const unowned = cars.filter((c) => c.sellerId == null).length;
-
-  const assignCar = (car: Car, sellerId: number | null) =>
-    request(`/api/admin/cars/${car.id}/seller`, 'PATCH', { sellerId })
-      .then(() => {
-        setAssigningId(null);
-        load();
-      })
-      .catch((e) => notify(e.message));
-
-  const assignUnowned = (seller: AdminUser) =>
-    confirmAction(
-      'มอบรถให้ผู้ขาย',
-      `มอบรถที่ยังไม่มีผู้ขายทั้งหมด ${unowned} คันให้ "${seller.username}" ใช่ไหม?`,
-      () =>
-        request('/api/admin/cars/assign-unowned', 'POST', { sellerId: seller.id })
-          .then((r) => {
-            notify(`มอบรถให้ ${seller.username} แล้ว ${r.updated} คัน`);
-            load();
-          })
-          .catch((e) => notify(e.message)),
-      'ตกลง'
-    );
-
   const q = search.trim().toLowerCase();
   const shownCars = cars.filter((c) => !q || `${c.name} ${c.model} ${c.sellerName}`.toLowerCase().includes(q));
   const shownUsers = users.filter((u) => !q || `${u.username} ${u.email}`.toLowerCase().includes(q));
@@ -172,26 +146,6 @@ export default function AdminScreen() {
               onChangeText={setSearch}
             />
 
-            {tab === 'cars' && unowned > 0 && (
-              <View style={styles.assignPanel}>
-                <Text style={styles.name}>{`มีรถที่ยังไม่มีผู้ขาย ${unowned} คัน`}</Text>
-                {sellers.length ? (
-                  <>
-                    <Text style={styles.meta}>กดชื่อผู้ขายเพื่อมอบรถทั้งหมดนี้ให้ (ผู้ขายจะเห็นในหน้า "รถของฉัน" และรับแชทจากผู้ซื้อ)</Text>
-                    <View style={styles.actions}>
-                      {sellers.map((u) => (
-                        <TouchableOpacity key={u.id} style={styles.roleBtn} onPress={() => assignUnowned(u)}>
-                          <Text style={styles.btnText}>{u.username}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                ) : (
-                  <Text style={styles.meta}>ยังไม่มีบัญชีผู้ขาย สมัครบัญชีผู้ขายก่อน แล้วกลับมาที่หน้านี้</Text>
-                )}
-              </View>
-            )}
-
             {tab === 'cars'
               ? shownCars.map((car) => (
                   <View key={car.id} style={styles.row}>
@@ -210,30 +164,10 @@ export default function AdminScreen() {
                       <TouchableOpacity style={styles.btn} onPress={() => router.push({ pathname: '/edit', params: { car: JSON.stringify(car) } })}>
                         <Text style={styles.btnText}>แก้ไข</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.btn} onPress={() => setAssigningId(assigningId === car.id ? null : car.id)}>
-                        <Text style={styles.btnText}>เปลี่ยนผู้ขาย</Text>
-                      </TouchableOpacity>
                       <TouchableOpacity style={[styles.btn, styles.btnDanger]} onPress={() => deleteCar(car)}>
                         <Text style={styles.btnText}>ลบ</Text>
                       </TouchableOpacity>
                     </View>
-                    {assigningId === car.id && (
-                      <View style={styles.assignRow}>
-                        <Text style={styles.meta}>เลือกผู้ขาย:</Text>
-                        {sellers.map((u) => (
-                          <TouchableOpacity
-                            key={u.id}
-                            style={[styles.roleBtn, Number(car.sellerId) === Number(u.id) && styles.roleBtnActive]}
-                            onPress={() => assignCar(car, u.id)}
-                          >
-                            <Text style={styles.btnText}>{u.username}</Text>
-                          </TouchableOpacity>
-                        ))}
-                        <TouchableOpacity style={[styles.roleBtn, car.sellerId == null && styles.roleBtnActive]} onPress={() => assignCar(car, null)}>
-                          <Text style={styles.btnText}>ไม่มีผู้ขาย (ร้าน)</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
                   </View>
                 ))
               : shownUsers.map((u) => {
@@ -320,7 +254,5 @@ const styles = StyleSheet.create({
   btnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   roleBtn: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: '#3A3A3A' },
   roleBtnActive: { backgroundColor: '#12351F', borderColor: C.green },
-  assignPanel: { padding: 14, borderRadius: 10, backgroundColor: '#1F0A0C', borderWidth: 1, borderColor: C.red, marginBottom: 12, gap: 8 },
-  assignRow: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
   note: { color: C.muted, fontSize: 12, marginTop: 8 },
 });
