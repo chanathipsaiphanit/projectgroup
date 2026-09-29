@@ -3,7 +3,7 @@ import { api } from '@/config';
 import { useAuth } from '@/context/auth-context';
 import { C, canSell, Car, formatTHB, FUELS, normalizeCar, notify, thFuel, thTransmission, thType, TRANSMISSIONS } from '@/lib/cars';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Platform,
@@ -56,9 +56,8 @@ function ChipRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.filterRow}>
       <Text style={styles.filterLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
-        {children}
-      </ScrollView>
+      {/* Chips wrap onto new lines so every option is visible without scrolling sideways */}
+      <View style={styles.chipWrap}>{children}</View>
     </View>
   );
 }
@@ -67,8 +66,12 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { width } = useWindowDimensions();
-  // Phone-sized screens stack the header and the sort bar instead of squeezing them into one row
-  const narrow = width < 640;
+  // Phone-sized screens stack the header and the sort bar instead of squeezing them into one row.
+  // The web build pre-renders this page without a screen size, so re-check once it's mounted —
+  // otherwise the pre-rendered phone layout would stick on desktop.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const narrow = !mounted || width < 640;
 
   const contentWidth = Math.min(width, MAX_CONTENT_WIDTH) - 40;
   const columns = contentWidth >= 1000 ? 4 : contentWidth >= 720 ? 3 : contentWidth >= 460 ? 2 : 1;
@@ -329,11 +332,11 @@ export default function HomeScreen() {
               <Text style={styles.countText}>{`พบ ${filteredCars.length} คัน · แตะที่รถเพื่อดูรายละเอียดและติดต่อผู้ขาย`}</Text>
             </View>
             <View style={[styles.resultsActions, narrow && styles.resultsActionsNarrow]}>
-              <ScrollView horizontal style={{ flexShrink: 1 }} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+              <View style={styles.sortWrap}>
                 {SORTS.map((s) => (
                   <Chip key={s.key} label={s.label} active={sort === s.key} onPress={() => setSort(s.key)} />
                 ))}
-              </ScrollView>
+              </View>
               <TouchableOpacity
                 style={[styles.compareToggle, compareMode && styles.compareToggleActive, narrow && { alignSelf: 'flex-start' }]}
                 onPress={() => (compareMode ? exitCompare() : setCompareMode(true))}
@@ -440,8 +443,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   brandTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 1 },
   brandTagline: { fontSize: 12, color: C.red, fontWeight: '700', marginTop: 2 },
-  nav: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, flexShrink: 1 },
-  navNarrow: { width: '100%', marginLeft: -10 },
+  nav: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 },
+  navNarrow: { width: '100%', marginLeft: -10, flexShrink: 1 },
   navLink: { paddingHorizontal: 10, paddingVertical: 8 },
   navLinkText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   navLinkMuted: { color: C.muted, fontWeight: '600', fontSize: 13 },
@@ -463,9 +466,10 @@ const styles = StyleSheet.create({
   clearText: { color: '#666', fontWeight: '700' },
 
   filters: { marginTop: 18, padding: 14, borderRadius: 10, backgroundColor: C.card, borderWidth: 1, borderColor: C.border, gap: 10 },
-  filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  filterLabel: { width: 64, color: C.muted, fontSize: 13, fontWeight: '700' },
-  chipScroll: { gap: 6, alignItems: 'center' },
+  filterRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  filterLabel: { width: 64, paddingTop: 7, color: C.muted, fontSize: 13, fontWeight: '700' },
+  chipWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  sortWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, flexShrink: 1 },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: C.borderStrong, backgroundColor: C.input },
   chipActive: { backgroundColor: C.red, borderColor: C.red },
   chipText: { color: C.soft, fontSize: 13, fontWeight: '600' },
