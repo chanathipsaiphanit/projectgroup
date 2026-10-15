@@ -511,6 +511,9 @@ app.patch('/api/appointments/:id', verifyToken, async (req, res) => {
 // ==========================================
 // AI — recommendation & comparison
 // ==========================================
+// Chatbot (rule-based): POST /api/ai/chat
+app.use('/api/ai/chat', require('./chat-route')({ db, ai, verifyToken, carSelect: CAR_SELECT }));
+
 app.post('/api/ai/recommend', async (req, res) => {
   try {
     const prefs = req.body || {};

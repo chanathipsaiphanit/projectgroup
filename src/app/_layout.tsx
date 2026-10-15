@@ -1,3 +1,4 @@
+import ChatBot from '@/components/chat-bot';
 import { AuthProvider } from '@/context/auth-context';
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
@@ -33,7 +34,9 @@ export default function RootLayout() {
         <Stack.Screen name="compare" />
         <Stack.Screen name="my-cars" />
         <Stack.Screen name="admin" />
+        <Stack.Screen name="chatbot" />
       </Stack>
+      <ChatBot />
     </AuthProvider>
   );
 }
